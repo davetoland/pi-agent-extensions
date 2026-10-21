@@ -525,6 +525,109 @@ process.stdin.resume();`);
   }
 });
 
+test('isolated tmux keeps agents tracked when the window menu moves their panes', { timeout: 30000 }, async t => {
+  const root = mkdtempSync(join(tmpdir(), 'tmux-agents-move-'));
+  const socket = join(root, 'socket');
+  const stateRoot = join(root, 'state');
+  mkdirSync(stateRoot, { mode: 0o700 });
+  const idle = join(root, 'idle.cjs');
+  writeFileSync(idle, 'process.stdin.resume();');
+  const tmux = async args => (await exec('tmux', ['-S', socket, ...args])).stdout;
+  const initial = (await tmux(['-f', '/dev/null', 'new-session', '-d', '-P', '-F', '#{pane_id}', '-s', 'isolated',
+    '-c', root, process.execPath, idle])).trim();
+  const before = { TMUX: process.env.TMUX, TMUX_PANE: process.env.TMUX_PANE, argv: process.argv[1] };
+  process.env.TMUX = `${socket},0,0`;
+  process.env.TMUX_PANE = initial;
+  process.argv[1] = idle;
+  const piExec = async (command, args, options) => {
+    try { const out = await exec(command, args, { signal: options?.signal, timeout: options?.timeout }); return { ...out, code: 0, killed: false }; }
+    catch (error) { return { stdout: error.stdout || '', stderr: error.stderr || '', code: error.code, killed: error.killed }; }
+  };
+  const manager = new mod.TmuxAgents({ exec: piExec }, stateRoot);
+  const menu = join(dirname(extensionPath), 'tmux-menu.sh');
+  // Run the menu's actions the way its menu items do, against this fixture's server only.
+  const action = (...args) => tmux(['run-shell', `bash ${menu} ${args.join(' ')}`]);
+  const windowOf = async id => (await tmux(['display-message', '-p', '-t', id, '#{window_id}'])).trim();
+  try {
+    const first = await manager.spawn({ name: 'mover-a', waitMs: 0 }, { cwd: root });
+    const second = await manager.spawn({ name: 'mover-b', mode: 'pane', waitMs: 0 }, { cwd: root });
+    // Without snapshots the children report "starting"; an identity mismatch reports "unavailable".
+    assert.equal((await manager.context(first.id)).status, 'starting');
+
+    await t.test('spawned agents join the automatic pane layout', async () => {
+      assert.equal((await tmux(['show-options', '-pqv', '-t', second.id, '@pi_agent_name'])).trim(), 'mover-b');
+      assert.equal((await tmux(['show-options', '-wqv', '-t', await windowOf(second.id), '@piao_managed'])).trim(), '1');
+      assert.equal((await tmux(['show-options', '-wqv', '-t', await windowOf(initial), '@piao_main'])).trim(), initial, 'the parent pane is the main pane');
+    });
+
+    await t.test('panes-to-windows breaks a pane out and the agent stays tracked', async () => {
+      const from = await windowOf(second.id);
+      await action('panes-to-windows', from);
+      assert.notEqual(await windowOf(second.id), from);
+      assert.equal((await manager.context(second.id)).status, 'starting');
+    });
+
+    await t.test('join moves every pane and the agents stay tracked', async () => {
+      const target = await windowOf(first.id);
+      const client = 'unused-client';
+      await action('join', client, await windowOf(second.id), target).catch(() => {}); // No client is attached to switch.
+      assert.equal(await windowOf(second.id), target);
+      assert.equal((await manager.context(second.id)).status, 'starting');
+      const listed = (await manager.list()).agents.find(agent => agent.id === second.id);
+      assert.equal(listed.window, target, 'list reports the current window, not the spawn window');
+    });
+
+    await t.test('a replaced process in the same pane is still rejected', async () => {
+      const record = manager.record(first.id);
+      assert.equal((await manager.inspect({ ...record, start: 'wrong-start' })).status, 'unavailable');
+    });
+
+    await t.test('the menu rejects IDs that would change its commands', async () => {
+      await assert.rejects(action('send-end', `'@0;kill-server'`));
+      assert.ok((await tmux(['list-windows', '-a'])).length > 0, 'server still running');
+    });
+
+    await t.test('installing the menu replaces the default binding but keeps a custom one', async () => {
+      assert.equal(await mod.installWindowMenu(piExec, socket, menu), 'installed');
+      assert.match(await tmux(['list-keys', '-T', 'root', 'MouseDown3Status']), /tmux-menu\.sh menu/);
+      assert.equal(await mod.installWindowMenu(piExec, socket, menu), 'already-installed');
+      await tmux(['bind-key', '-n', 'MouseDown3Status', 'display-message', 'custom']);
+      assert.equal(await mod.installWindowMenu(piExec, socket, menu), 'kept-custom-binding');
+      assert.equal(await mod.installWindowMenu(piExec, socket, '/path with space/tmux-menu.sh'), 'unsupported-path');
+    });
+  } finally {
+    if (before.TMUX === undefined) delete process.env.TMUX; else process.env.TMUX = before.TMUX;
+    if (before.TMUX_PANE === undefined) delete process.env.TMUX_PANE; else process.env.TMUX_PANE = before.TMUX_PANE;
+    process.argv[1] = before.argv;
+    // This server contains only this fixture's idle children. Never use the user's socket.
+    await tmux(['kill-server']);
+  }
+});
+
+test('isolated tmux accepts every generated pane layout', { timeout: 30000 }, async () => {
+  const layout = await import(pathToFileURL(join(dirname(extensionPath), 'layout.mjs')).href);
+  const root = mkdtempSync(join(tmpdir(), 'tmux-agents-layout-'));
+  const socket = join(root, 'socket');
+  const tmux = async args => (await exec('tmux', ['-S', socket, ...args])).stdout.trim();
+  await tmux(['-f', '/dev/null', 'new-session', '-d', '-s', 'layout', '-x', '200', '-y', '50', 'sleep 600']);
+  try {
+    for (let count = 1; count <= 8; count++) {
+      if (count > 1) await tmux(['split-window', '-d', '-t', 'layout:0', 'sleep 600']).catch(() => tmux(['select-layout', '-t', 'layout:0', 'tiled']).then(() => tmux(['split-window', '-d', '-t', 'layout:0', 'sleep 600'])));
+      const ids = (await tmux(['list-panes', '-t', 'layout:0', '-F', '#{pane_id}'])).split('\n');
+      assert.equal(ids.length, count);
+      for (const [mode, width] of [['auto', 0], ['stack', 0], ['columns', 0], ['grid', 0], ['auto', 30], ['stack', 70]]) {
+        const encoded = layout.encodeLayout(layout.makeLayout(ids, 200, 50, mode, width));
+        // tmux rejects a layout whose checksum, sizes or pane count is wrong.
+        await tmux(['select-layout', '-t', 'layout:0', encoded]);
+        assert.equal((await tmux(['display-message', '-p', '-t', 'layout:0', '#{window_layout}'])), encoded, `${count} panes, ${mode} ${width}%`);
+      }
+    }
+    assert.throws(() => layout.makeLayout(['%1', '%2', '%3'], 10, 4), /too (small|narrow)/);
+  } finally {
+    await tmux(['kill-server']);
+  }
+});
+
 test('isolated tmux and real interactive Pi, without model calls', { timeout: 90000 }, async t => {
   const root = mkdtempSync(join(tmpdir(), 'tmux-agents-smoke-'));
   const config = join(root, 'config');
