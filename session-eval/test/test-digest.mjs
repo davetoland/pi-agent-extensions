@@ -1,4 +1,4 @@
-// Run: node --test scripts/test-digest.mjs   (or: node scripts/test-digest.mjs)
+// Run from the repository root: node --test session-eval/test/test-digest.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -6,10 +6,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { analyseBundle, renderMd, commandShape, commandSegments, findLoops, selectFlags, DEFAULTS } from './digest.mjs';
+import { analyseBundle, renderMd, commandShape, commandSegments, findLoops, selectFlags, DEFAULTS } from '../evaluate-session/scripts/digest.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const script = path.join(here, 'digest.mjs');
+const script = path.join(here, '..', 'evaluate-session', 'scripts', 'digest.mjs');
 const bundle = path.join(here, 'fixtures', 'minimal');
 const cfgFile = path.join(here, 'fixtures', 'minimal.config.json');
 const cfg = { ...structuredClone(DEFAULTS), ...JSON.parse(fs.readFileSync(cfgFile, 'utf8')) };
