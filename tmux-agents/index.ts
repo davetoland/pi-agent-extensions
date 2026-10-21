@@ -105,7 +105,7 @@ export function getPiInvocation(args: string[]) {
 
 type SpawnArgs = { name: string; mode?: "window" | "pane"; cwd?: string; systemPrompt?: string; provider?: string; model?: string; thinking?: string; waitMs?: number };
 type Pane = { serverPid: number; session: string; window: string; id: string; pid: number; dead: boolean; inMode: boolean };
-type Record = Pane & { dir: string; token: string; socket: string; serverStart: string; start: string; name: string; mode: string; createdAt: string };
+type ChildRecord = Pane & { dir: string; token: string; socket: string; serverStart: string; start: string; name: string; mode: string; createdAt: string };
 type Snapshot = {
   token: string; id: string; pid: number; start: string; sessionId: string; sessionFile: string | null;
   updatedAt: string; event: string; idle: boolean; pending: boolean; waiting: boolean; editorEmpty: boolean; stopped: boolean;
@@ -146,6 +146,26 @@ function socketPath() {
   return socket;
 }
 
+/** This process's tmux pane ID, such as %12. */
+function currentPane() {
+  const pane = process.env.TMUX_PANE;
+  if (!pane || !/^%\d+$/.test(pane)) throw new Error("Run the parent Pi inside tmux");
+  return pane;
+}
+
+/** Checks the fields the pollers rely on. Records come from files any same-user process can write. */
+function isPeerMessage(value: unknown): value is PeerMessage {
+  const hasName = (endpoint: unknown) =>
+    typeof endpoint === "object" && endpoint !== null && "name" in endpoint && typeof endpoint.name === "string";
+  return typeof value === "object" && value !== null &&
+    "messageId" in value && typeof value.messageId === "string" &&
+    "createdAt" in value && typeof value.createdAt === "string" &&
+    "content" in value && typeof value.content === "string" &&
+    "mode" in value && (value.mode === "steering" || value.mode === "interrupt") &&
+    "from" in value && hasName(value.from) &&
+    "to" in value && hasName(value.to);
+}
+
 export function launchArgs(params: SpawnArgs, cwd: string) {
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$/.test(params.name)) throw new Error("Name must be 1-48 letters, digits, underscores or hyphens, starting with a letter or digit");
   if (RESERVED_ENDPOINT_NAMES.has(params.name)) throw new Error(`Name ${JSON.stringify(params.name)} is reserved`);
@@ -159,9 +179,10 @@ export function launchArgs(params: SpawnArgs, cwd: string) {
     args.push("--system-prompt", file);
   }
   for (const key of ["provider", "model", "thinking"] as const) {
-    if (params[key]) {
-      if (/[\x00-\x1f\x7f]/.test(params[key]!) || params[key]!.startsWith("-")) throw new Error(`Invalid ${key}`);
-      args.push(`--${key}`, params[key]!);
+    const value = params[key];
+    if (value) {
+      if (/[\x00-\x1f\x7f]/.test(value) || value.startsWith("-")) throw new Error(`Invalid ${key}`);
+      args.push(`--${key}`, value);
     }
   }
   return { cwd: dir, args };
@@ -184,10 +205,10 @@ export class TmuxAgents {
     return parsePane(await this.tmux(socket, ["display-message", "-p", "-t", id, FORMAT], signal));
   }
 
-  records(): Record[] {
+  records(): ChildRecord[] {
     return readdirSync(this.root).filter(name => name.startsWith("child-")).flatMap(name => {
       try {
-        const record = jsonFile<Record>(join(this.root, name, "meta.json"));
+        const record = jsonFile<ChildRecord>(join(this.root, name, "meta.json"));
         return record ? [record] : [];
       } catch (error) {
         console.error(`tmux agents: skipping unreadable child record. ${bounded(String(error), 300)}`);
@@ -202,7 +223,7 @@ export class TmuxAgents {
     return record;
   }
 
-  async inspect(record: Record, signal?: AbortSignal) {
+  async inspect(record: ChildRecord, signal?: AbortSignal) {
     let live: Pane;
     try {
       if (processIdentity(record.serverPid).start !== record.serverStart) throw new Error("server changed");
@@ -224,7 +245,7 @@ export class TmuxAgents {
   async spawn(params: SpawnArgs, ctx: Pick<ExtensionContext, "cwd">, signal?: AbortSignal) {
     const launch = launchArgs(params, ctx.cwd); // Validate the file before any spawn.
     const socket = socketPath();
-    const parent = await this.pane(socket, process.env.TMUX_PANE!, signal);
+    const parent = await this.pane(socket, currentPane(), signal);
     const names = await this.tmux(socket, ["list-windows", "-t", parent.session, "-F", "#{window_name}"], signal);
     if (names.trim().split("\n").includes(params.name) || this.records().some(r => r.name === params.name)) throw new Error("Name already exists. Choose a unique window label");
     const dir = mkdtempSync(join(this.root, "child-"));
@@ -242,7 +263,7 @@ export class TmuxAgents {
     try {
       // Once creation starts, collect the ID even if the caller cancels. Never retry a spawn.
       pane = parsePane(await this.tmux(socket, command));
-      const record: Record = { ...pane, socket, dir, token, name: params.name, mode,
+      const record: ChildRecord = { ...pane, socket, dir, token, name: params.name, mode,
         serverStart: processIdentity(pane.serverPid).start, start: processIdentity(pane.pid).start, createdAt: new Date().toISOString() };
       atomicJSON(join(dir, "meta.json"), record);
       await this.tmux(socket, ["set-option", "-w", "-t", pane.window, "automatic-rename", "off"]);
@@ -582,12 +603,6 @@ export default function (pi: ExtensionAPI) {
     const writeTerminalReceipt = (receipt: PeerReceipt) => {
       if (!owner.receipt(receipt.messageId)) owner.writeReceipt(receipt);
     };
-    const validMessage = (message: unknown): message is PeerMessage => {
-      const value = message as Partial<PeerMessage>;
-      return !!value && typeof value.messageId === "string" && typeof value.createdAt === "string" &&
-        typeof value.content === "string" && (value.mode === "steering" || value.mode === "interrupt") &&
-        !!value.from && typeof value.from.name === "string" && !!value.to && typeof value.to.name === "string";
-    };
     const tick = () => {
       parentTimer = undefined;
       if (current !== parentGeneration) return;
@@ -609,7 +624,7 @@ export default function (pi: ExtensionAPI) {
             writeTerminalReceipt({ messageId, state: "invalid-record", error: bounded(String(error), 300) });
             continue;
           }
-          if (!validMessage(message) || message.to.name !== "parent") continue;
+          if (!isPeerMessage(message) || message.to.name !== "parent") continue;
           messages.push(message);
           if (owner.receipt(message.messageId)) continue;
           if (message.createdAt < PROCESS_STARTED_AT) {
@@ -664,15 +679,9 @@ export default function (pi: ExtensionAPI) {
     for (const timer of refreshTimers) clearTimeout(timer);
     refreshTimers.clear();
   };
-  const validPeerMessage = (message: unknown): message is PeerMessage => {
-    const value = message as Partial<PeerMessage>;
-    return !!value && typeof value.messageId === "string" && typeof value.createdAt === "string" && typeof value.content === "string" &&
-      (value.mode === "steering" || value.mode === "interrupt") && !!value.from && typeof value.from.name === "string" &&
-      !!value.to && typeof value.to.name === "string";
-  };
   const snapshot = (ctx: ExtensionContext, event: string, stopped = false) => {
     if (!owned) return;
-    const data: Snapshot = { token, id: process.env.TMUX_PANE!, pid: process.pid, start: processIdentity(process.pid).start,
+    const data: Snapshot = { token, id: currentPane(), pid: process.pid, start: processIdentity(process.pid).start,
       sessionId: ctx.sessionManager.getSessionId(), sessionFile: ctx.sessionManager.getSessionFile() ?? null,
       updatedAt: new Date().toISOString(), event, stopped, idle: ctx.isIdle(), pending: ctx.hasPendingMessages(), waiting,
       editorEmpty: ctx.ui.getEditorText().length === 0, context: contextSummary(ctx), thinking: ctx.thinkingLevel ?? null,
@@ -718,7 +727,7 @@ export default function (pi: ExtensionAPI) {
     const guarded = (message: unknown): GuardResult => {
       if (!owned || current !== generation || ctx.sessionManager.getSessionId() !== sessionId) return { ok: false, reason: "lifecycle" };
       if (waiting) return { ok: false, reason: "waiting" };
-      if (!validPeerMessage(message)) return { ok: false, reason: "invalid" };
+      if (!isPeerMessage(message)) return { ok: false, reason: "invalid" };
       if (message.to.name !== familyName) return { ok: false, reason: "not-mine" };
       if (message.createdAt < PROCESS_STARTED_AT) return { ok: false, reason: "stale" };
       if (manager.receipt(message.messageId)) return { ok: false, reason: "receipted" };
@@ -793,7 +802,7 @@ export default function (pi: ExtensionAPI) {
           if (handledMessages.has(messageId) || manager.receipt(messageId)) continue;
           try {
             const message: unknown = manager.readMessage(filename);
-            if (!validPeerMessage(message)) {
+            if (!isPeerMessage(message)) {
               manager.writeReceipt({ messageId, state: "invalid-record", error: "Message record has an invalid schema" });
               continue;
             }
@@ -835,7 +844,7 @@ export default function (pi: ExtensionAPI) {
     const current = generation;
     if (ctx.mode !== "tui") return;
     privateDirectory(childDir);
-    const check = await pi.exec("tmux", ["-S", socketPath(), "display-message", "-p", "-t", process.env.TMUX_PANE!, "#{pane_pid}"], { timeout: 5000 });
+    const check = await pi.exec("tmux", ["-S", socketPath(), "display-message", "-p", "-t", currentPane(), "#{pane_pid}"], { timeout: 5000 });
     if (current !== generation) return;
     // A nested Pi that merely inherits our env must not publish as its parent.
     owned = check.code === 0 && Number(check.stdout.trim()) === process.pid;

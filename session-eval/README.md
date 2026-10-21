@@ -1,6 +1,6 @@
 # session-eval
 
-This pi extension supports the harness-neutral [`evaluate-session`](../../skills/evaluate-session/) skill. The skill evaluates agent sessions from a *trace bundle*, which `references/trace-bundle.md` in the skill defines. This extension does four things:
+This pi extension supports the harness-neutral [`evaluate-session`](evaluate-session/) skill, which ships alongside it in this directory. The skill evaluates agent sessions from a *trace bundle*, defined in [`evaluate-session/references/trace-bundle.md`](evaluate-session/references/trace-bundle.md). You can also write your own skill against that format. This extension does four things:
 
 - It exports pi sessions as a trace bundle, through `adapter.mjs` in this directory.
 - It starts the skill from a command, with the bundle and report locations.
@@ -11,7 +11,9 @@ The skill does not depend on this extension. Without an adapter, the skill stops
 
 ## Install
 
-Put this directory in `~/.pi/agent/extensions/`.
+Install it with the rest of this repository's package (see the [main README](../README.md)), which installs the extension and the skill together.
+
+To install by hand, copy this directory to `~/.pi/agent/extensions/session-eval/` and copy `evaluate-session/` to `~/.pi/agent/skills/evaluate-session/`. The `test/` directory is not needed at runtime. Run the digest tests from the repository root with `node --test session-eval/test/test-digest.mjs`.
 
 `index.ts` loads `adapter.mjs` from its own directory only when an export runs. It checks that the module exports `exportBundle` and checks the shape of the result. If the adapter is missing, passive capture still works and exports report an error.
 

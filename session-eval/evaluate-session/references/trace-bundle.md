@@ -25,7 +25,7 @@ A bundle holds one or more **runs**. A run is one agent working in one context, 
     "adapterVersion": "0.1.0"
   },
   "selection": {
-    "description": "how runs were selected, e.g. --cwd /root/wt-7683 --since 2026-09-01",
+    "description": "how runs were selected, e.g. --cwd /home/me/project --since 2026-09-01",
     "scanned": 120, "selected": 48, "excluded": 72
   },
   "warnings": ["adapter-level caveats, e.g. 'tmux peer links inferred by name and time'"],
