@@ -85,7 +85,7 @@ A replacement for the footer at the bottom of every Pi session in the terminal. 
 ```
 
 **Highlights**
-- **Clear context usage.** Tokens used against the context window, with a percentage that turns amber above 70% and red above 90%.
+- **Clear context usage.** Tokens used against the context window, with a percentage that turns amber at 40% and red at 60%, earlier than Pi's own footer (70% and 90%).
 - **Cumulative usage.** Input, output, cache read and cache write totals across the whole session, including tool results, compactions, branch summaries and cache warming.
 - **Cache hit rate.** The share of the latest prompt served from cache.
 - **Cost, with subscription awareness.** Shows `(sub)` when you're on a subscription rather than paying per token.
