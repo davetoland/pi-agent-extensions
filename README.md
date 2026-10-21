@@ -4,6 +4,8 @@ A collection of custom extensions for the [Pi coding agent](https://pi.dev): foc
 
 Everything ships as a single Pi package. Install the lot, or pick just the extensions you want.
 
+📣 **[Extending Pi](series/README.md)** is a short series about these extensions: what each one adds and why, plus getting started with Pi and writing your own.
+
 ---
 
 ## Extensions at a glance
