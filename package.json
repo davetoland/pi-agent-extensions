@@ -1,0 +1,21 @@
+{
+  "name": "@davetoland/pi-agent-extensions",
+  "version": "0.1.0",
+  "description": "Custom extensions for the Pi coding agent",
+  "keywords": ["pi-package"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/davetoland/pi-agent-extensions.git"
+  },
+  "pi": {
+    "extensions": [
+      "./custom-footer/index.ts",
+      "./conditional-instructions/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  }
+}
