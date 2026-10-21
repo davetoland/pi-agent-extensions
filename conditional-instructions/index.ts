@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getAgentDir, isToolCallEventType } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, isReadToolResult, isToolCallEventType } from "@earendil-works/pi-coding-agent";
 
 import {
   existsSync,
@@ -43,7 +43,14 @@ function stripQuotes(value: string): string {
 function parseInstruction(
   absolutePath: string,
 ): Instruction | undefined {
-  const source = readFileSync(absolutePath, "utf8");
+  let source: string;
+
+  try {
+    source = readFileSync(absolutePath, "utf8");
+  } catch {
+    // One unreadable file must not stop the others loading.
+    return undefined;
+  }
 
   const match = source.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?([\s\S]*)$/);
 
@@ -242,11 +249,20 @@ corresponding instruction file has been read and followed.
    * without putting those instructions into every model request.
    */
   pi.on("tool_result", async event => {
-    if (!isToolCallEventType("read", event)) {
+    // Nested reads (for example from a codemode script) return to the script,
+    // not the model, and a failed read shows the model no file contents.
+    // Neither puts instructions into context.
+    if (!isReadToolResult(event) || event.isError || event.parentToolCallId) {
       return;
     }
 
-    const absolute = toAbsolutePath(event.input.path, cwd);
+    const path = event.input.path;
+
+    if (typeof path !== "string") {
+      return;
+    }
+
+    const absolute = toAbsolutePath(path, cwd);
 
     // If the model explicitly read an instruction file, consider it loaded.
     for (const instruction of instructions) {
