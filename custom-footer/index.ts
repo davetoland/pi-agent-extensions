@@ -11,6 +11,10 @@ import { dirname, join, resolve } from "node:path";
  */
 const HEAD_POLL_INTERVAL_MS = 2_000;
 
+/** Context usage, as a percentage of the window, at which the readout turns amber and then red. */
+const CONTEXT_WARNING_PERCENT = 40;
+const CONTEXT_ERROR_PERCENT = 60;
+
 function findGitHeadPath(cwd: string): string | null {
   let dir = resolve(cwd);
 
@@ -324,12 +328,12 @@ export default function footer(pi: ExtensionAPI) {
           }
 
           /*
-           * Keep Pi's normal warning colours.
+           * Warn earlier than Pi does (70% and 90%), using Pi's colours.
            */
           if (
             contextPercent !== null &&
             contextPercent !== undefined &&
-            contextPercent > 90
+            contextPercent >= CONTEXT_ERROR_PERCENT
           ) {
             contextDisplay = theme.fg(
               "error",
@@ -338,7 +342,7 @@ export default function footer(pi: ExtensionAPI) {
           } else if (
             contextPercent !== null &&
             contextPercent !== undefined &&
-            contextPercent > 70
+            contextPercent >= CONTEXT_WARNING_PERCENT
           ) {
             contextDisplay = theme.fg(
               "warning",
