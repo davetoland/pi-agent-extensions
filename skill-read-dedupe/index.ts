@@ -14,7 +14,8 @@
  * Disable with PI_SKILL_READ_DEDUPE=off (also: 0, false, no, disabled).
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ContextWithSystemEvent, ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 
 import { readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
@@ -31,7 +32,8 @@ const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
 const SKILL_BLOCK = /^<skill name="([^"]+)" location="([^"]+)">\n([\s\S]*?)\n<\/skill>(?:\n\n([\s\S]+))?$/;
 const SKILL_PREAMBLE = /^References are relative to [^\n]*\.$/;
 
-type Msg = Record<string, any>;
+/** A message in the context Pi sent to the model. */
+type ContextMessage = ContextWithSystemEvent["messages"][number];
 
 interface Match {
   source: "read" | "skill";
@@ -132,17 +134,29 @@ function sameCanonical(rawPath: string, cwd: string, target: string): boolean {
 }
 
 
-function findInContext(messages: Msg[], target: string, current: string, cwd: string): Match | undefined {
+/** True when a read result's details say the output was truncated, or can't be read as saying it wasn't. */
+function isTruncated(details: unknown): boolean {
+  if (typeof details !== "object" || details === null || !("truncation" in details) || details.truncation === undefined) {
+    return false;
+  }
+
+  const truncation = details.truncation;
+
+  return !(typeof truncation === "object" && truncation !== null && "truncated" in truncation && truncation.truncated === false);
+}
+
+
+function findInContext(messages: readonly ContextMessage[], target: string, current: string, cwd: string): Match | undefined {
   // toolCallId -> arguments, for read calls in assistant messages.
   const readCalls = new Map<string, unknown>();
 
   for (const message of messages) {
-    if (message?.role !== "assistant" || !Array.isArray(message.content)) {
+    if (message.role !== "assistant") {
       continue;
     }
 
     for (const block of message.content) {
-      if (block?.type === "toolCall" && block.name === "read" && typeof block.id === "string") {
+      if (block.type === "toolCall" && block.name === "read") {
         readCalls.set(block.id, block.arguments);
       }
     }
@@ -151,7 +165,7 @@ function findInContext(messages: Msg[], target: string, current: string, cwd: st
   let body: string | undefined;
 
   for (const message of messages) {
-    if (message?.role === "toolResult") {
+    if (message.role === "toolResult") {
       if (message.toolName !== "read" || message.isError !== false) {
         continue;
       }
@@ -163,33 +177,29 @@ function findInContext(messages: Msg[], target: string, current: string, cwd: st
       }
 
       // The read tool sets details.truncation only when it truncated output.
-      const truncation = message.details?.truncation;
-
-      if (truncation !== undefined && truncation?.truncated !== false) {
+      if (isTruncated(message.details)) {
         continue;
       }
 
-      const content = message.content;
+      const [only, ...rest] = message.content;
 
-      if (!Array.isArray(content) || content.length !== 1 || content[0]?.type !== "text") {
+      if (only?.type !== "text" || rest.length > 0) {
         continue;
       }
 
       // Exact equality with the file's current text proves both completeness
       // (no truncation/continuation notice) and currency (no edits since).
-      if (content[0].text === current) {
+      if (only.text === current) {
         return { source: "read" };
       }
 
       continue;
     }
 
-    if (message?.role === "user") {
+    if (message.role === "user") {
       const parts = typeof message.content === "string"
         ? [message.content]
-        : Array.isArray(message.content)
-          ? message.content.filter((p: Msg) => p?.type === "text" && typeof p.text === "string").map((p: Msg) => p.text)
-          : [];
+        : message.content.flatMap(part => part.type === "text" ? [part.text] : []);
 
       for (const text of parts) {
         const match = text.match(SKILL_BLOCK);
@@ -215,7 +225,7 @@ function findInContext(messages: Msg[], target: string, current: string, cwd: st
 
 
 export default function (pi: ExtensionAPI) {
-  let lastContext: Msg[] | undefined;
+  let lastContext: readonly ContextMessage[] | undefined;
 
   const reset = () => {
     lastContext = undefined;
@@ -224,7 +234,7 @@ export default function (pi: ExtensionAPI) {
   // Observe only: return nothing so the request is unchanged.
   pi.on("context_with_system", async (event) => {
     try {
-      lastContext = Array.isArray(event.messages) ? (event.messages as Msg[]) : undefined;
+      lastContext = Array.isArray(event.messages) ? event.messages : undefined;
     } catch {
       lastContext = undefined;
     }
@@ -241,13 +251,13 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("tool_call", async (event, ctx) => {
     try {
-      if (isDisabled() || event.toolName !== "read" || event.parentToolCallId || !lastContext) {
+      if (isDisabled() || !isToolCallEventType("read", event) || event.parentToolCallId || !lastContext) {
         return undefined;
       }
 
-      const input = event.input as Record<string, unknown>;
+      const input = event.input;
 
-      if (typeof input?.path !== "string" || basename(input.path) !== SKILL_FILE) {
+      if (typeof input.path !== "string" || basename(input.path) !== SKILL_FILE) {
         return undefined;
       }
 
