@@ -24,7 +24,7 @@ Everything ships as a single Pi package. Install the lot, or pick just the exten
 
 - [Pi coding agent](https://pi.dev)
 - Node.js 22.5 or later (`conditional-instructions` uses `matchesGlob` from `node:path`)
-- For `tmux-agents` only: Linux and [tmux](https://github.com/tmux/tmux)
+- For `tmux-agents` only: Linux and [tmux](https://github.com/tmux/tmux). On Windows, use WSL. Elsewhere it stays inactive.
 
 ### Install everything
 
@@ -172,7 +172,7 @@ The parent agent drives its children through tools:
 - **Agent-to-agent messaging.** Children can message each other once the parent grants a link. Messages to the parent only raise a badge in its footer, so a child can never start work in the parent session.
 - **Auditable delivery.** Every message gets a delivery receipt that the parent can inspect.
 
-**Requires:** Linux and tmux, with the parent Pi running inside tmux. The tab menu replaces tmux's built-in window menu; start Pi with `PI_TMUX_AGENTS_MENU=off` to keep tmux's own, or `PI_TMUX_AGENTS_LAYOUT=off` to turn off automatic layout. The layout needs `node` on your `PATH`. See [`tmux-agents/README.md`](tmux-agents/README.md) for the full tool reference, delivery semantics and trust boundary.
+**Requires:** Linux and tmux, with the parent Pi running inside tmux. On native Windows, macOS, or outside tmux, it stays inactive and registers no tools; Windows users can run Pi in WSL. The tab menu replaces tmux's built-in window menu; start Pi with `PI_TMUX_AGENTS_MENU=off` to keep tmux's own, or `PI_TMUX_AGENTS_LAYOUT=off` to turn off automatic layout. The layout needs `node` on your `PATH`. See [`tmux-agents/README.md`](tmux-agents/README.md) for the full tool reference, delivery semantics and trust boundary.
 
 ---
 

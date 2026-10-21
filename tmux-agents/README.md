@@ -4,6 +4,8 @@ Local Pi tools for interactive child sessions in tmux. This extension runs persi
 
 Requires Linux with `/proc`, tmux, and Pi. Tested with Pi 0.85.1, tmux 3.5a, and Node 22. Run the parent Pi inside tmux.
 
+Anywhere else (native Windows, macOS, or Linux outside tmux) the extension stays inactive: it registers no tools and changes nothing, so leaving it installed is harmless. On Windows, run Pi inside WSL, in tmux, for example from a WSL tab in Windows Terminal.
+
 Install it with the rest of this repository's package (see the [main README](../README.md)), or copy this directory to `~/.pi/agent/extensions/tmux-agents/`. Use `/reload` in a running parent to enable it. Installing does not reload or control existing sessions.
 
 ## Tools

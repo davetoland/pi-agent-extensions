@@ -21,6 +21,17 @@ const jiti = createJiti(import.meta.url, { moduleCache: false, alias: {
 const extensionPath = join(dirname(fileURLToPath(import.meta.url)), 'index.ts');
 const mod = await jiti.import(extensionPath);
 
+/** Run fn with TMUX and TMUX_PANE set, as inside tmux, then restore them. The extension is inactive outside tmux. */
+async function insideTmux(fn) {
+  const before = { TMUX: process.env.TMUX, TMUX_PANE: process.env.TMUX_PANE };
+  process.env.TMUX ??= '/tmp/tmux-agents-test-unused-socket,0,0';
+  process.env.TMUX_PANE ??= '%1';
+  try { return await fn(); }
+  finally {
+    for (const [key, value] of Object.entries(before)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+  }
+}
+
 test('context retains unknown values and reports raw tokens and decimal k', () => {
   const ctx = { getContextUsage: () => ({ tokens: null, contextWindow: 200000, percent: null }) };
   assert.deepEqual(mod.contextSummary(ctx), { tokens: null, tokensK: null, contextWindow: 200000, contextWindowK: '200.0k', percent: null });
@@ -51,7 +62,7 @@ test('bounded output includes a truncation marker within the limit', () => {
 
 test('tool JSON remains valid for bounded strings that expand during escaping', async () => {
   const tools = new Map();
-  mod.default({ registerTool(tool) { tools.set(tool.name, tool); }, on() {} });
+  await insideTmux(() => mod.default({ registerTool(tool) { tools.set(tool.name, tool); }, on() {} }));
   const original = mod.TmuxAgents.prototype.read;
   try {
     for (const text of ['"\n'.repeat(10000), '\x00'.repeat(20000)]) {
@@ -203,7 +214,7 @@ test('argument boundaries preserve metacharacters and prompt files are validated
 
 test('loader registers exactly ten sequential tools and no services', async () => {
   const { loadExtensions } = await import(pathToFileURL(join(piDir, 'dist/core/extensions/loader.js')));
-  const loaded = await loadExtensions([extensionPath], tmpdir());
+  const loaded = await insideTmux(() => loadExtensions([extensionPath], tmpdir()));
   assert.deepEqual(loaded.errors, []);
   const tools = [...loaded.extensions[0].tools.values()].map(t => t.definition);
   assert.deepEqual(tools.map(t => t.name).sort(), [
@@ -410,9 +421,25 @@ test('AC6 interrupts once, then injects only after the recipient becomes idle', 
   }
 });
 
-test('peer tool schemas expose only the agreed modes and bounded message text', () => {
+test('outside tmux or Linux the extension registers nothing', async () => {
+  assert.equal(mod.supportedEnvironment('linux', { TMUX: '/tmp/s,1,0', TMUX_PANE: '%1' }), true);
+  assert.equal(mod.supportedEnvironment('win32', { TMUX: '/tmp/s,1,0', TMUX_PANE: '%1' }), false);
+  assert.equal(mod.supportedEnvironment('darwin', { TMUX: '/tmp/s,1,0', TMUX_PANE: '%1' }), false);
+  assert.equal(mod.supportedEnvironment('linux', {}), false);
+  const before = { TMUX: process.env.TMUX, TMUX_PANE: process.env.TMUX_PANE };
+  delete process.env.TMUX; delete process.env.TMUX_PANE;
+  try {
+    const registered = [];
+    mod.default({ registerTool(tool) { registered.push(tool.name); }, on(event) { registered.push(event); } });
+    assert.deepEqual(registered, []);
+  } finally {
+    for (const [key, value] of Object.entries(before)) { if (value !== undefined) process.env[key] = value; }
+  }
+});
+
+test('peer tool schemas expose only the agreed modes and bounded message text', async () => {
   const tools = new Map();
-  mod.default({ registerTool(tool) { tools.set(tool.name, tool); }, on() {} });
+  await insideTmux(() => mod.default({ registerTool(tool) { tools.set(tool.name, tool); }, on() {} }));
   const parameters = name => tools.get(name).parameters;
 
   assert.deepEqual(parameters('tmux_agent_permissions').properties.action.enum, ['grant', 'revoke', 'list']);

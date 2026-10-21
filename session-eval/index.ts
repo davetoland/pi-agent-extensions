@@ -26,7 +26,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const EXT_DIR = dirname(fileURLToPath(import.meta.url));
 const SKILL_NAME = "evaluate-session";
-const SKILL_READ_SUFFIX = `/${SKILL_NAME}/SKILL.md`;
 const SKILL_BLOCK_MARK = `<skill name="${SKILL_NAME}" location=`;
 const CONTEXT_TAG = "session-eval-harness-context";
 const CONTEXT_MARK = `<${CONTEXT_TAG}>`;
@@ -822,7 +821,9 @@ export default function sessionEval(pi: ExtensionAPI) {
 
       const raw = event.input.path;
       if (typeof raw !== "string") return undefined;
-      if (!expandPath({ path: raw, cwd: ctx.cwd }).endsWith(SKILL_READ_SUFFIX)) return undefined;
+      // Compare path segments, not a "/" suffix, so Windows paths match too.
+      const path = expandPath({ path: raw, cwd: ctx.cwd });
+      if (basename(path) !== "SKILL.md" || basename(dirname(path)) !== SKILL_NAME) return undefined;
 
       contextSent = true;
       return { content: [...event.content, { type: "text" as const, text: `\n\n${harnessContext({ ctx })}` }] };
