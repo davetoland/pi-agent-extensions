@@ -567,7 +567,17 @@ export class TmuxAgents {
   }
 }
 
+/**
+ * tmux-agents needs tmux and Linux's /proc, which it uses to check process identity. Elsewhere,
+ * including native Windows and macOS, or when Pi isn't running inside tmux, the extension stays
+ * inactive: it registers no tools, so it costs no context and raises no errors.
+ */
+export function supportedEnvironment(platform: string = process.platform, env: NodeJS.ProcessEnv = process.env): boolean {
+  return platform === "linux" && Boolean(env.TMUX) && Boolean(env.TMUX_PANE);
+}
+
 export default function (pi: ExtensionAPI) {
+  if (!supportedEnvironment()) return;
   // Children can also spawn children. Each process has its own parent directory.
   let manager: TmuxAgents | undefined;
   const agents = () => manager ??= new TmuxAgents(pi);
