@@ -20,6 +20,13 @@ const PROCESS_STARTED_AT = new Date().toISOString();
 const MENU_SCRIPT = join(dirname(SELF), "tmux-menu.sh");
 const MENU_KEY = "MouseDown3Status";
 const MENU_OPT_OUT = "PI_TMUX_AGENTS_MENU";
+const LAYOUT_SCRIPT = join(dirname(SELF), "layout.mjs");
+const LAYOUT_OPT_OUT = "PI_TMUX_AGENTS_LAYOUT";
+
+/** True when an opt-out environment variable is set to off, 0, false, no or disabled. */
+function optedOut(variable: string): boolean {
+  return ["off", "0", "false", "no", "disabled"].includes((process.env[variable] ?? "").trim().toLowerCase());
+}
 
 export function bounded(text: string, max = 12000): string {
   const marker = "\n[truncated; inspect the child TUI for more]";
@@ -303,6 +310,10 @@ export class TmuxAgents {
       await this.tmux(socket, ["set-option", "-w", "-t", pane.window, "automatic-rename", "off"]);
       await this.tmux(socket, ["set-option", "-w", "-t", pane.window, "allow-rename", "off"]);
       await this.tmux(socket, ["rename-window", "-t", pane.window, params.name]);
+      if (!optedOut(LAYOUT_OPT_OUT)) {
+        // Layout is a convenience: a failure here must not fail the spawn.
+        await this.pi.exec("node", [LAYOUT_SCRIPT, "attach", parent.id, pane.id, params.name], { timeout: 10000 }).catch(() => undefined);
+      }
       const deadline = Date.now() + (params.waitMs ?? 10000);
       let state;
       do {
@@ -624,12 +635,17 @@ export default function (pi: ExtensionAPI) {
     parameters: Type.Object({ offset: Type.Optional(Type.Integer({ minimum: 0 })), peer: Type.Optional(Type.String()), maxChars: Type.Optional(Type.Integer({ minimum: 1000, maximum: 20000 })) }),
     async execute(_id, args, signal, _update, ctx) { return result(await agents().messages(args.offset, args.peer, args.maxChars, signal, ctx.sessionManager.getSessionId())); } });
 
-  // The parent installs the window menu once per process. Children inherit the tmux server's binding.
+  // The parent installs the pane layout and the window menu once per process. Children inherit the tmux server's settings.
   let menuChecked = false;
   pi.on("session_start", async (_event, ctx) => {
     if (menuChecked || process.env[CHILD_DIR] || !process.env.TMUX || ctx.mode !== "tui") return;
     menuChecked = true;
-    if (["off", "0", "false", "no", "disabled"].includes((process.env[MENU_OPT_OUT] ?? "").trim().toLowerCase())) return;
+    if (!optedOut(LAYOUT_OPT_OUT)) {
+      // layout.mjs runs under node, not Pi's runtime, because the tmux hooks it registers re-run it from tmux.
+      const layout = await pi.exec("node", [LAYOUT_SCRIPT, "install", currentPane()], { timeout: 15000 }).catch(error => ({ code: 1, stderr: String(error) }));
+      if (layout.code !== 0) ctx.ui.notify(`tmux-agents: automatic pane layout is off. ${bounded(layout.stderr.trim() || "node layout.mjs install failed", 300)}`, "warning");
+    }
+    if (optedOut(MENU_OPT_OUT)) return;
     try {
       const outcome = await installWindowMenu(pi.exec.bind(pi), socketPath());
       if (outcome === "kept-custom-binding") {

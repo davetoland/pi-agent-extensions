@@ -216,7 +216,32 @@ The menu is installed when a parent Pi starts inside tmux. It binds `MouseDown3S
 
 The menu is a standalone script, [`tmux-menu.sh`](tmux-menu.sh), so you can also bind it yourself without Pi. Its header shows the binding. It uses `display-menu -M -O` where tmux supports them and falls back to a plain menu on versions that don't, such as tmux 3.4.
 
-If a window has a `@piao_script` option naming a layout script, the menu also offers **Layout...** and **Focus / Restore active agent**, and joining into that window uses its remembered layout. No such script ships with this extension yet.
+In windows managed by the pane layout (below), the menu also offers **Layout...** and **Focus / Restore active agent**, and joining into one of those windows uses its remembered layout.
+
+## Pane layout
+
+When agents share a window, [`layout.mjs`](layout.mjs) arranges them automatically: the parent Pi is the main pane on the left, and its agents fill the space to the right. The layout is recalculated when an agent is added or exits, when panes are joined or broken out, and when the terminal is resized. Dragging a border doesn't snap back, because geometry alone doesn't trigger a recalculation.
+
+Right-click inside an agent pane for its menu:
+
+| Item | What it does |
+| --- | --- |
+| Layout... | Choose **Auto** (the default), **Main + stack**, **Three columns**, **Equal grid** or **Keep current layout**, set the main pane's width (automatic, or 30% to 70%), or reapply the layout now |
+| Focus this agent / Restore layout | Zooms the pane to fill the window, and back |
+| Keep current layout (drag borders) | Stops automatic arrangement for this window |
+| Use this pane as main | Makes this pane the large one |
+| Switch to *agent* | Jumps to that agent's pane |
+
+**Auto** gives the main pane 60% of the width with one agent, 50% with up to three, 40% with up to six and 35% beyond that, and splits the agents into more columns from four agents up, or sooner if a single column would make them too short. A terminal too small for the chosen layout keeps its current layout and shows a message.
+
+A parent Pi sets this up when it starts inside tmux. It runs `layout.mjs` with `node`, which must be on your `PATH`:
+
+- It turns on mouse mode for the parent's tmux session, which the right-click menus need.
+- It registers six tmux hooks (`window-layout-changed`, `window-resized`, `window-linked`, `pane-exited`, `after-split-window` and `after-kill-pane`) at index 81731, so a restart or `/reload` replaces them rather than adding more. Each hook checks the window's size and pane count inside tmux first, so mouse drags don't start a `node` process.
+- It binds a right-click in a pane (`MouseDown3Pane`) to the agent menu in managed windows only. Elsewhere, the key keeps whatever it did before.
+- Each spawned agent is attached to its parent's layout and labelled with its name.
+
+All of this lasts until the tmux server exits. Start Pi with `PI_TMUX_AGENTS_LAYOUT=off` to turn off the layout entirely. Layout settings are stored as `@piao_*` tmux window and pane options.
 
 ## State, lifecycle, and trust
 

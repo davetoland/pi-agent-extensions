@@ -166,8 +166,8 @@ case "${1:-}" in
 
     items=()
 
-    # Layout controls come from an optional layout script, named by the
-    # window's @piao_script option. Without it, these items are left out.
+    # Layout controls come from layout.mjs, which names itself in the
+    # window's @piao_script option. Windows it doesn't manage leave these out.
     layout_script="$(tmux show-options -wqv -t "$source_window" @piao_script)"
     if [[ -n "$layout_script" && -f "$layout_script" ]]; then
       items+=(
@@ -307,7 +307,7 @@ case "${1:-}" in
         -t "$destination_pane"
     done
 
-    # Windows with a layout script use their remembered layout. Ordinary
+    # Windows managed by layout.mjs use their remembered layout. Ordinary
     # windows are laid out side by side.
     layout_script="$(tmux show-options -wqv -t "$destination_window" @piao_script)"
     if [[ -n "$layout_script" && -f "$layout_script" ]]; then

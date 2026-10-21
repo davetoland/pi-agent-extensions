@@ -150,7 +150,7 @@ See [`skill-read-dedupe/README.md`](skill-read-dedupe/README.md) for the exact m
 
 **Multiple Pi agents, one terminal.**
 
-`tmux-agents` lets a Pi agent spawn other interactive Pi agents, each in its own tmux window or pane. Every child shows up as a labelled tab in tmux's window bar, so you can switch to it, watch it work, or take over. Right-click a tab for a menu to split its panes into windows, join it into another window, reorder, rename or close it. Agents stay manageable however you rearrange them.
+`tmux-agents` lets a Pi agent spawn other interactive Pi agents, each in its own tmux window or pane. Every child shows up as a labelled tab in tmux's window bar, so you can switch to it, watch it work, or take over. Agents that share a window are laid out automatically around the parent, with a choice of layouts from a right-click menu in any agent pane. Right-click a tab for a menu to split its panes into windows, join it into another window, reorder, rename or close it. Agents stay manageable however you rearrange them.
 
 The parent agent drives its children through tools:
 
@@ -172,7 +172,7 @@ The parent agent drives its children through tools:
 - **Agent-to-agent messaging.** Children can message each other once the parent grants a link. Messages to the parent only raise a badge in its footer, so a child can never start work in the parent session.
 - **Auditable delivery.** Every message gets a delivery receipt that the parent can inspect.
 
-**Requires:** Linux and tmux, with the parent Pi running inside tmux. The right-click menu replaces tmux's built-in window menu; start Pi with `PI_TMUX_AGENTS_MENU=off` to keep tmux's own. See [`tmux-agents/README.md`](tmux-agents/README.md) for the full tool reference, delivery semantics and trust boundary.
+**Requires:** Linux and tmux, with the parent Pi running inside tmux. The tab menu replaces tmux's built-in window menu; start Pi with `PI_TMUX_AGENTS_MENU=off` to keep tmux's own, or `PI_TMUX_AGENTS_LAYOUT=off` to turn off automatic layout. The layout needs `node` on your `PATH`. See [`tmux-agents/README.md`](tmux-agents/README.md) for the full tool reference, delivery semantics and trust boundary.
 
 ---
 
@@ -229,6 +229,7 @@ Alongside exporting, the extension records a few facts Pi doesn't keep on its ow
 ├── tmux-agents/
 │   ├── index.ts
 │   ├── tmux-menu.sh       right-click window menu
+│   ├── layout.mjs         automatic pane layout
 │   ├── test.mjs
 │   └── README.md
 ├── session-eval/

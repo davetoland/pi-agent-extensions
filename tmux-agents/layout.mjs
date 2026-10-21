@@ -83,7 +83,8 @@ export function encodeLayout(tree) {
 }
 
 export class LayoutController {
-  constructor(call = (...args) => execFileSync("tmux", args, { encoding: "utf8", timeout: 5000 }).trim()) { this.call = call; }
+  // tmux's error output is captured, so failures surface as error messages rather than stray terminal output.
+  constructor(call = (...args) => execFileSync("tmux", args, { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "pipe"] }).trim()) { this.call = call; }
   optional(...args) { try { return this.call(...args); } catch { return ""; } }
   get(target, key, scope = "w") { return this.optional("show-options", `-${scope}qv`, "-t", target, PREFIX + key); }
   set(target, key, value, scope = "w") { this.call("set-option", `-${scope}`, "-t", target, PREFIX + key, String(value)); }
@@ -212,7 +213,13 @@ export class LayoutController {
         add(`Switch to ${name.replace(/[\r\n\t]/g, " ").replace(/#/g, "##")}`, "", "focus", client, id);
       }
     }
-    this.call("display-menu", "-M", "-O", "-c", client, "-t", pane, "-T", "Agent " + (submenu === "main" ? "panes" : submenu), "-x", "C", "-y", "C", ...entries);
+    const options = ["-c", client, "-t", pane, "-T", "Agent " + (submenu === "main" ? "panes" : submenu), "-x", "C", "-y", "C", ...entries];
+    // -M and -O need a recent tmux (3.4 has no -M). Older versions show the same menu without them.
+    try { this.call("display-menu", "-M", "-O", ...options); }
+    catch (error) {
+      if (!/unknown flag -[MO]/.test(String(error?.message))) throw error;
+      this.call("display-menu", ...options);
+    }
   }
 
   run(args) {
@@ -284,7 +291,7 @@ if (process.argv[1] && resolve(process.argv[1]) === SELF) {
     // display-menu waits until the user selects an item: never hold the layout
     // lock or impose the ordinary five-second tmux timeout on a mouse menu.
     if (["menu", "layout-menu", "width-menu"].includes(process.argv[2])) {
-      controller.call = (...args) => execFileSync("tmux", args, { encoding: "utf8", ...(args[0] === "display-menu" ? {} : { timeout: 5000 }) }).trim();
+      controller.call = (...args) => execFileSync("tmux", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...(args[0] === "display-menu" ? {} : { timeout: 5000 }) }).trim();
       controller.run(process.argv.slice(2));
     } else await locked(controller, () => controller.run(process.argv.slice(2)));
   } catch (error) {
