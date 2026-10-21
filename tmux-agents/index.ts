@@ -228,7 +228,9 @@ export class TmuxAgents {
     try {
       if (processIdentity(record.serverPid).start !== record.serverStart) throw new Error("server changed");
       live = await this.pane(record.socket, record.id, signal);
-      if (live.dead || live.serverPid !== record.serverPid || live.session !== record.session || live.window !== record.window || live.pid !== record.pid || processIdentity(record.pid).start !== record.start) throw new Error("pane changed");
+      // Pane ID, PID and start time identify the agent. Session and window are not compared:
+      // join-pane, break-pane and move-pane keep a pane's ID while moving it between windows.
+      if (live.dead || live.serverPid !== record.serverPid || live.pid !== record.pid || processIdentity(record.pid).start !== record.start) throw new Error("pane changed");
     } catch {
       signal?.throwIfAborted();
       return { status: "unavailable" as const, snapshot: undefined, live: undefined };
@@ -342,7 +344,8 @@ export class TmuxAgents {
     const agents = [];
     for (const record of records.slice(offset, offset + 50)) {
       const state = await this.inspect(record, signal);
-      agents.push({ id: record.id, name: record.name, window: record.window, mode: record.mode, status: state.status });
+      // The pane may have moved since spawn, so report its current window when it is known.
+      agents.push({ id: record.id, name: record.name, window: state.live?.window ?? record.window, mode: record.mode, status: state.status });
     }
     return { agents, nextOffset: offset + 50 < records.length ? offset + 50 : null };
   }
