@@ -198,6 +198,26 @@ Each refresh stops after settlement or after ten minutes. A timeout warns in the
 
 Snapshots are not live token counters during streaming. `updatedAt` identifies their age. Only provider and model IDs are exposed, not model configuration, headers, or credentials.
 
+## Window menu
+
+Right-click a window's tab in the tmux status bar to open a menu for that window:
+
+| Item | What it does |
+| --- | --- |
+| Panes to Windows | Breaks every pane except the first out into its own window |
+| Join *window* | Moves every pane of the clicked window into the chosen window, lays them out side by side, and switches you there |
+| Send Left / Send Right / Send to End | Moves the window along the tab bar, keeping window numbers contiguous |
+| Rename | Renames the window's tab |
+| Kill | Closes the window, and anything running in it, after you confirm |
+
+Items that don't apply, such as Send Left on the first tab, are greyed out. Moving panes between windows is safe for spawned agents: they are tracked by pane ID, process ID and process start time, which survive a move, so they stay manageable from the parent. Rename changes only the tab label. Tools and peer messages still address an agent by the name it was spawned with.
+
+The menu is installed when a parent Pi starts inside tmux. It binds `MouseDown3Status`, a right-click on a window tab, which replaces tmux's built-in window menu for that tmux server until the server exits. It replaces only tmux's default binding or an earlier copy of this menu. If you've bound that key yourself, your binding is kept and Pi shows a note. To stop the extension installing the menu, start Pi with `PI_TMUX_AGENTS_MENU=off`. To remove it from a running tmux server, run `tmux unbind-key -n MouseDown3Status`.
+
+The menu is a standalone script, [`tmux-menu.sh`](tmux-menu.sh), so you can also bind it yourself without Pi. Its header shows the binding. It uses `display-menu -M -O` where tmux supports them and falls back to a plain menu on versions that don't, such as tmux 3.4.
+
+If a window has a `@piao_script` option naming a layout script, the menu also offers **Layout...** and **Focus / Restore active agent**, and joining into that window uses its remembered layout. No such script ships with this extension yet.
+
 ## State, lifecycle, and trust
 
 State lives under `$TMPDIR/pi-tmux-agents-<uid>/<parent-pid>-<start-ticks>`, normally in `/tmp`:
@@ -214,7 +234,7 @@ $TMPDIR/pi-tmux-agents-<uid>/<parent-pid>-<parent-start-ticks>/
 
 Directories are owner-only (`0700`) and files use mode `0600`. Spawn passes `PI_TMUX_AGENT_DIR`, `PI_TMUX_AGENT_TOKEN`, `PI_TMUX_AGENT_FAMILY`, and `PI_TMUX_AGENT_NAME` to each child. Snapshots and state updates use atomic replacement. Nothing is deleted in this version: message records and receipts accumulate, cleanup is manual, and records can contain task text.
 
-The extension validates the tmux socket, server identity, session, window, pane ID, PID, and Linux process start time before `tmux_agent_send`. A child that inherits another child's environment cannot publish under that identity unless it is the original pane process.
+The extension validates the tmux socket, server identity, pane ID, PID, and Linux process start time before `tmux_agent_send`. Session and window are not checked, because moving a pane between windows keeps its pane ID; `tmux_agent_list` reports each agent's current window. A child that inherits another child's environment cannot publish under that identity unless it is the original pane process.
 
 The registry survives `/reload` within the same parent process. It does not reconnect from a different parent process or adopt a manually moved or replaced pane. Children remain interactive and do not close when the parent exits.
 

@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-wor
 import { Type } from "typebox";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { accessSync, constants, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { basename, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,9 @@ const RESERVED_ENDPOINT_NAMES = new Set(["parent"]);
 const FORMAT = "#{pid}\t#{session_id}\t#{window_id}\t#{pane_id}\t#{pane_pid}\t#{pane_dead}\t#{pane_in_mode}";
 const NOTE = "Pi context estimate, not cumulative billed tokens. Fresh sessions can undercount system/tool cost. Null means unknown, including after compaction.";
 const PROCESS_STARTED_AT = new Date().toISOString();
+const MENU_SCRIPT = join(dirname(SELF), "tmux-menu.sh");
+const MENU_KEY = "MouseDown3Status";
+const MENU_OPT_OUT = "PI_TMUX_AGENTS_MENU";
 
 export function bounded(text: string, max = 12000): string {
   const marker = "\n[truncated; inspect the child TUI for more]";
@@ -186,6 +189,35 @@ export function launchArgs(params: SpawnArgs, cwd: string) {
     }
   }
   return { cwd: dir, args };
+}
+
+/**
+ * True when the right-click binding on a window tab may be replaced with this extension's menu:
+ * nothing is bound, tmux's default window menu is bound, or an earlier standalone copy of the menu is.
+ * Any other binding is the user's own and is kept.
+ */
+export function replaceableMenuBinding(listing: string): boolean {
+  const binding = listing.trim();
+  if (!binding) return true;
+  const isDefaultMenu = /\bdisplay-menu\b/.test(binding) && binding.includes("Swap Left") && binding.includes("kill-window");
+  return isDefaultMenu || binding.includes("tmux-window-menu") || binding.includes("tmux-menu.sh");
+}
+
+export type MenuInstall = "installed" | "already-installed" | "kept-custom-binding" | "unsupported-path";
+
+/** Bind a right-click on a window tab in the status bar to tmux-menu.sh. The binding lasts for the tmux server's lifetime. */
+export async function installWindowMenu(exec: ExtensionAPI["exec"], socket: string, script = MENU_SCRIPT): Promise<MenuInstall> {
+  // The path is embedded in a tmux command string and a shell command, so it must need no quoting.
+  if (!/^[A-Za-z0-9_./-]+$/.test(script)) return "unsupported-path";
+  const command = `bash ${script} menu '#{client_name}' '#{pane_id}'`;
+  const current = await exec("tmux", ["-S", socket, "list-keys", "-T", "root", MENU_KEY], { timeout: 5000 });
+  const listing = current.code === 0 ? current.stdout : "";
+  if (listing.includes(command)) return "already-installed";
+  if (!replaceableMenuBinding(listing)) return "kept-custom-binding";
+  // -t = runs the command in the context of the clicked window, so #{pane_id} is its active pane.
+  const bind = await exec("tmux", ["-S", socket, "bind-key", "-n", MENU_KEY, "run-shell", "-b", "-t", "=", command], { timeout: 5000 });
+  if (bind.code !== 0) throw new Error(`tmux bind-key failed (exit ${bind.code})`);
+  return "installed";
 }
 
 export class TmuxAgents {
@@ -591,6 +623,24 @@ export default function (pi: ExtensionAPI) {
     description: "Inspect messages in caller's own spawn family. Only family owner sees this family's records. Content is bounded by maxChars. Reading parent-addressed rows clears their unread badge.",
     parameters: Type.Object({ offset: Type.Optional(Type.Integer({ minimum: 0 })), peer: Type.Optional(Type.String()), maxChars: Type.Optional(Type.Integer({ minimum: 1000, maximum: 20000 })) }),
     async execute(_id, args, signal, _update, ctx) { return result(await agents().messages(args.offset, args.peer, args.maxChars, signal, ctx.sessionManager.getSessionId())); } });
+
+  // The parent installs the window menu once per process. Children inherit the tmux server's binding.
+  let menuChecked = false;
+  pi.on("session_start", async (_event, ctx) => {
+    if (menuChecked || process.env[CHILD_DIR] || !process.env.TMUX || ctx.mode !== "tui") return;
+    menuChecked = true;
+    if (["off", "0", "false", "no", "disabled"].includes((process.env[MENU_OPT_OUT] ?? "").trim().toLowerCase())) return;
+    try {
+      const outcome = await installWindowMenu(pi.exec.bind(pi), socketPath());
+      if (outcome === "kept-custom-binding") {
+        ctx.ui.notify(`tmux-agents: right-click window menu not installed, because ${MENU_KEY} already has a custom tmux binding.`, "info");
+      } else if (outcome === "unsupported-path") {
+        ctx.ui.notify("tmux-agents: right-click window menu not installed, because the extension's path contains characters that would need quoting.", "warning");
+      }
+    } catch (error) {
+      ctx.ui.notify(`tmux-agents: could not install the right-click window menu. ${bounded(String(error), 300)}`, "warning");
+    }
+  });
 
   let parentGeneration = 0;
   let parentTimer: NodeJS.Timeout | undefined;
