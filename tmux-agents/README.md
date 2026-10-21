@@ -2,7 +2,9 @@
 
 Local Pi tools for interactive child sessions in tmux. This extension runs persistent, unreferenced watchers: children poll their spawn-family message store and automatically inject permitted peer messages into their sessions. Parent-owned families also poll for messages addressed to the parent. A delivered child message starts a real model turn; it is not a notification that requires a human to copy text into the child.
 
-Requires Linux with `/proc`, tmux, and Pi. Tested with Pi 0.85.1, tmux 3.5a, and Node 22. Run the parent Pi inside tmux. This directory is auto-discovered at `~/.pi/agent/extensions/tmux-agents/index.ts`. Use `/reload` in the parent when you want to enable it. Installing these files does not reload or control existing sessions.
+Requires Linux with `/proc`, tmux, and Pi. Tested with Pi 0.85.1, tmux 3.5a, and Node 22. Run the parent Pi inside tmux.
+
+Install it with the rest of this repository's package (see the [main README](../README.md)), or copy this directory to `~/.pi/agent/extensions/tmux-agents/`. Use `/reload` in a running parent to enable it. Installing does not reload or control existing sessions.
 
 ## Tools
 
@@ -229,7 +231,7 @@ These API limits do not constrain a malicious same-user process that bypasses th
 ## Verification
 
 ```bash
-node --test /root/.pi/agent/extensions/tmux-agents/test.mjs
+node --test tmux-agents/test.mjs
 ```
 
 Tests use Node's test runner, the installed Pi loader, `tsc`, and an isolated temporary tmux socket. No packages are installed. Set `PI_TEST_PACKAGE_DIR` if the Pi package is not under `npm root -g`.
