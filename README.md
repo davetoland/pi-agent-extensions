@@ -37,7 +37,7 @@ pi install git:github.com/davetoland/pi-agent-extensions
 Add `-l` to install into the current project only. To pin a release, add its tag:
 
 ```bash
-pi install git:github.com/davetoland/pi-agent-extensions@v0.1.0
+pi install git:github.com/davetoland/pi-agent-extensions@v0.1.1
 ```
 
 Update or remove it with `pi update` and `pi remove`.

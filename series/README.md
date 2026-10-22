@@ -5,7 +5,7 @@
 Install all five extensions with:
 
 ```bash
-pi install git:github.com/davetoland/pi-agent-extensions@v0.1.0
+pi install git:github.com/davetoland/pi-agent-extensions@v0.1.1
 ```
 
 ---
