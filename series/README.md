@@ -72,7 +72,21 @@ Key takeaways:
 
 ---
 
-## Extending Pi: 04 - Session Eval (Agent Session Evaluation)
+## Extending Pi: 04 - Context Pressure (Delegate Before It's Too Late)
+
+[`context-pressure`](../context-pressure) treats the context window as a budget. At 20% of the window, or a token cap, it adds a note to tool results telling the agent to delegate further reading and searching and to save any state it needs; the note repeats as usage climbs. At 40%, it blocks full reads of large files and cuts long tool output to its start and end. Subagents get tighter limits and are told to finish and return.
+
+Its advice matches what's installed: delegate to subagents when a subagent tool is available, spawn another agent when only tmux-agents is, and keep reads and searches narrow when neither is. The Part 1 footer turns amber and red at the same 20% and 40%.
+
+Key takeaways:
+
+✅ Treat context as a budget: warn early, and enforce a limit before it's too late.  
+✅ Steer, don't just stop: every block explains what to do instead.  
+✅ Match the advice to the setup: never point the agent at a tool it doesn't have.
+
+---
+
+## Extending Pi: 05 - Session Eval (Agent Session Evaluation)
 
 [`session-eval`](../session-eval) has two parts. The extension exports Pi sessions, including their subagents and peers, as a trace bundle, and records facts Pi doesn't, such as tool durations. The `evaluate-session` skill reads the bundle: a script measures cost, cache hit ratio, context spent by source and flags such as repeated reads, loops and risky commands, then the agent confirms each flag against the trace.
 
@@ -86,7 +100,7 @@ Key takeaways:
 
 ---
 
-## Extending Pi: 05 - tmux Agents (A Team of Agents in One Terminal)
+## Extending Pi: 06 - tmux Agents (A Team of Agents in One Terminal)
 
 [`tmux-agents`](../tmux-agents) lets one Pi agent spawn, brief and coordinate others, each a real interactive Pi in its own tmux window or pane. Agents message each other only along links the lead grants, and a message to the lead raises a badge rather than starting work in its session.
 
@@ -100,7 +114,7 @@ Key takeaways:
 
 ---
 
-## Extending Pi: 06 - Writing Your Own (Start by Asking Pi)
+## Extending Pi: 07 - Writing Your Own (Start by Asking Pi)
 
 When you ask Pi about extensions, it reads its own documentation and examples first, so describing the behaviour you want gets you a working extension. For example:
 
