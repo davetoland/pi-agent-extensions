@@ -301,7 +301,7 @@ export class LayoutController {
 			"-t",
 			pane,
 			"-T",
-			"Agent " + (submenu === "main" ? "panes" : submenu),
+			`Agent ${submenu === "main" ? "panes" : submenu}`,
 			"-x",
 			"C",
 			"-y",

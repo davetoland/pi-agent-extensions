@@ -1,14 +1,15 @@
 #!/usr/bin/env node
+
 // pi-session-eval adapter: converts pi coding-agent session JSONL files into a
 // harness-neutral trace bundle (schema version 1). Node >= 22, ESM, no npm deps.
 //
 // Contract: evaluate-session/references/trace-bundle.md
 
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import * as fsp from "node:fs/promises";
-import * as path from "node:path";
 import * as os from "node:os";
-import { createHash } from "node:crypto";
+import * as path from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
@@ -161,18 +162,18 @@ export function excerpt(s, limit) {
 
 function textField(name, s, limit) {
 	const str = s == null ? "" : String(s);
-	return { [name]: excerpt(str, limit), [name + "Chars"]: str.length };
+	return { [name]: excerpt(str, limit), [`${name}Chars`]: str.length };
 }
 
 function canonicalJson(v) {
-	if (Array.isArray(v)) return "[" + v.map(canonicalJson).join(",") + "]";
+	if (Array.isArray(v)) return `[${v.map(canonicalJson).join(",")}]`;
 	if (v && typeof v === "object") {
 		return (
 			"{" +
 			Object.keys(v)
 				.sort()
 				.filter((k) => v[k] !== undefined)
-				.map((k) => JSON.stringify(k) + ":" + canonicalJson(v[k]))
+				.map((k) => `${JSON.stringify(k)}:${canonicalJson(v[k])}`)
 				.join(",") +
 			"}"
 		);
@@ -188,7 +189,7 @@ export function argsHash(args) {
 
 /** `sha256:<hex>` of delivered text, or null. */
 function contentHash(s) {
-	return typeof s === "string" ? "sha256:" + createHash("sha256").update(s, "utf8").digest("hex") : null;
+	return typeof s === "string" ? `sha256:${createHash("sha256").update(s, "utf8").digest("hex")}` : null;
 }
 
 function truncateArgs(v, key) {
@@ -246,14 +247,14 @@ function isoOrNull(t) {
 	return null;
 }
 
-function shortData(v, depth = 0) {
+function _shortData(v, depth = 0) {
 	if (typeof v === "string") return excerpt(v, LIMIT.note);
-	if (Array.isArray(v)) return depth > 3 ? `[array ${v.length}]` : v.slice(0, 50).map((x) => shortData(x, depth + 1));
+	if (Array.isArray(v)) return depth > 3 ? `[array ${v.length}]` : v.slice(0, 50).map((x) => _shortData(x, depth + 1));
 	if (v && typeof v === "object") {
 		if (depth > 3) return "[object]";
 		const o = {};
 		for (const [k, x] of Object.entries(v))
-			o[k] = isSensitiveKey(k) && typeof x === "string" ? "[REDACTED]" : shortData(x, depth + 1);
+			o[k] = isSensitiveKey(k) && typeof x === "string" ? "[REDACTED]" : _shortData(x, depth + 1);
 		return o;
 	}
 	return v;
@@ -1075,7 +1076,7 @@ async function convertRun(job, env) {
 	};
 
 	if (env.includeChildren) {
-		const tasksDir = job.file.replace(/\.jsonl$/, "") + path.sep + "tasks";
+		const tasksDir = `${job.file.replace(/\.jsonl$/, "") + path.sep}tasks`;
 		const childFiles = await listJsonl(tasksDir);
 		linkStats.tasksFiles = childFiles.length;
 		const pathToAgent = new Map();
@@ -1344,7 +1345,7 @@ async function convertRun(job, env) {
 						const text = contentText(m.content);
 						const sb = SKILL_BLOCK.exec(text);
 						let o = origin;
-						if (o === null) o = job.parentSendTexts && job.parentSendTexts.has(text.trim()) ? "parent" : "human";
+						if (o === null) o = job.parentSendTexts?.has(text.trim()) ? "parent" : "human";
 						if (sb && o === "human") o = "command";
 						if (job.kind === "primary") {
 							if (userCount === 0 && AGENT_DRIVEN_FIRST.test(text)) agentDrivenFirst = true;
@@ -1564,7 +1565,7 @@ async function convertRun(job, env) {
 									const partial =
 										!(off <= 1) ||
 										!!d.truncation ||
-										(first !== null && first.startsWith("[Line ")) ||
+										first?.startsWith("[Line ") ||
 										(first !== null && READ_TRUNC_TRAILER.test(first));
 									const ok = !blocked && first !== null;
 									push("skill_load", e, {
@@ -2086,7 +2087,7 @@ async function writeBundle({ opts, sel, selected, index, dir }) {
 		warnings: [...warnings, ...CAVEATS],
 		runs: manifestRuns,
 	};
-	await fsp.writeFile(path.join(dir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n", "utf8");
+	await fsp.writeFile(path.join(dir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 	return { runCount: manifestRuns.length, rootCount, warnings, caveats: [...CAVEATS], linkStats: totals };
 }
 

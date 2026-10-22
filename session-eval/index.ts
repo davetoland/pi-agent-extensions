@@ -14,14 +14,13 @@
  * Every passive handler fails open: errors are swallowed and never block tools.
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { getAgentDir, VERSION } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
-
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, VERSION } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 
 const EXT_DIR = dirname(fileURLToPath(import.meta.url));
 const SKILL_NAME = "evaluate-session";

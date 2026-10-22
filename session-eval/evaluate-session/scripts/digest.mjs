@@ -9,8 +9,8 @@
 //   node digest.mjs context <bundleDir> [--tree ID] [--out dir] [--config f]
 
 import fs from "node:fs";
-import readline from "node:readline";
 import path from "node:path";
+import readline from "node:readline";
 
 // ---------------------------------------------------------------------------
 // Configuration. Every key can be overridden with --config <file.json>.
@@ -253,7 +253,7 @@ const oneLine = (s) =>
 	String(s ?? "")
 		.replace(/\r?\n/g, "⏎")
 		.replace(/\s+/g, " ");
-const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+const clip = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const cacheHit = (u) => {
 	const d = u.input + u.cacheRead + u.cacheWrite;
 	return d > 0 ? round(u.cacheRead / d, 4) : null;
@@ -341,7 +341,7 @@ function stripPrefixes(toks) {
 	}
 	return toks;
 }
-const verbOf = (t) => (t && t.includes("/") ? t.split("/").filter(Boolean).pop() || t : t);
+const verbOf = (t) => (t?.includes("/") ? t.split("/").filter(Boolean).pop() || t : t);
 const DEFAULT_SKIP = new Set(DEFAULTS.shapeSkipVerbs);
 
 // Normalised shell command shape: first 3 tokens of the first substantive simple command after skipping
@@ -949,14 +949,14 @@ async function analyseRun(run, bundleDir, cfg, rx, gap, bctx) {
 		const chars = r.outputChars ?? 0;
 		let parts = null; // [{cat, share}]
 		const sl = r.callId != null ? loadByCall.get(r.callId) : undefined;
-		if (sl && sl.skill) parts = [{ cat: `skill:${sl.skill}` }];
+		if (sl?.skill) parts = [{ cat: `skill:${sl.skill}` }];
 		else if (
 			(r.callId != null && delegCallIds.has(r.callId)) ||
 			resultRefSeqs.has(r.seq) ||
 			rx.delegResult?.test(r.name)
 		)
 			parts = [{ cat: "delegation" }];
-		else if (c && c.path && rx.read.test(c.name)) {
+		else if (c?.path && rx.read.test(c.name)) {
 			const f = classifyFile(c.path);
 			parts = [{ cat: f.cat }];
 			if (f.skill && f.isSkillMd && !r.isError && r.callId != null && !loadByCall.has(r.callId))
@@ -972,7 +972,7 @@ async function analyseRun(run, bundleDir, cfg, rx, gap, bctx) {
 					ref: c.ref,
 					inferred: true,
 				});
-		} else if (c && c.cmd) {
+		} else if (c?.cmd) {
 			const sr = shellReads(c.cmd, rx);
 			shellInfo.set(c.seq, sr);
 			if (sr.files.length) {
@@ -1099,7 +1099,7 @@ async function analyseRun(run, bundleDir, cfg, rx, gap, bctx) {
 		!!r && r.errorClass !== "harness_policy" && (r.isError || (r.exitCode != null && r.exitCode !== 0));
 	for (let i = 0; i < calls.length; i++) {
 		const r = res(calls[i]);
-		if (!r || !r.isError || r.errorClass === "harness_policy") continue;
+		if (!r?.isError || r.errorClass === "harness_policy") continue;
 		for (let j = i + 1; j <= i + cfg.errorThenSameWindow && j < calls.length; j++) {
 			if (calls[j].sig === calls[i].sig && !calls[i].sig.includes("\u0000#")) {
 				flag(
@@ -1482,7 +1482,9 @@ function readInterval(args) {
 function finaliseImpact(f, turnsAfter, cfg) {
 	const items = f._items || [];
 	let chars = items.length ? items.reduce((a, x) => a + x.chars, 0) : null;
-	const carried = items.length ? items.reduce((a, x) => a + (x.chars / cfg.charsPerToken) * turnsAfter(x.seq), 0) : null;
+	const carried = items.length
+		? items.reduce((a, x) => a + (x.chars / cfg.charsPerToken) * turnsAfter(x.seq), 0)
+		: null;
 	if (f._chars != null) chars = f._chars;
 	const tokens = f._tokens != null ? f._tokens : chars != null ? Math.round(chars / cfg.charsPerToken) : null;
 	f.impact = {
@@ -1610,7 +1612,7 @@ export async function analyseBundle(bundleDir, cfg) {
 		if (skillCache.has(p)) return skillCache.get(p);
 		let best = null;
 		for (const [dir, v] of skillDirs)
-			if ((p === v.skillMd || p.startsWith(dir + "/")) && (!best || dir.length > best.dir.length)) best = { dir, ...v };
+			if ((p === v.skillMd || p.startsWith(`${dir}/`)) && (!best || dir.length > best.dir.length)) best = { dir, ...v };
 		let out = best
 			? {
 					name: best.name,
@@ -2617,7 +2619,7 @@ export function renderMd(d) {
 			.map(([k, v]) => `${k}:${v}`)
 			.join(" ");
 		push(
-			`| ${mdCell(t.rootId)} | ${mdCell(clip(treeLabel(t), 60))} | ${t.startedAt?.slice(0, 16) ?? "-"} | ${fmtMs(t.durationMs)} | ${fmtCost(t.usage.cost)} | ${t.childCostShare == null ? "-" : Math.round(t.childCostShare * 100) + "%"} | ${t.turns} | ${t.delegations} | ${fmtK(t.context.totalChars)} | ${t.context.totalChars ? pct(t.skillChars / t.context.totalChars) : "-"} | ${fmtK(t.peakContextTokens)} | ${t.flagSeverity.high}/${t.flagSeverity.med}/${t.flagSeverity.low} | ${mdCell(top)} |`,
+			`| ${mdCell(t.rootId)} | ${mdCell(clip(treeLabel(t), 60))} | ${t.startedAt?.slice(0, 16) ?? "-"} | ${fmtMs(t.durationMs)} | ${fmtCost(t.usage.cost)} | ${t.childCostShare == null ? "-" : `${Math.round(t.childCostShare * 100)}%`} | ${t.turns} | ${t.delegations} | ${fmtK(t.context.totalChars)} | ${t.context.totalChars ? pct(t.skillChars / t.context.totalChars) : "-"} | ${fmtK(t.peakContextTokens)} | ${t.flagSeverity.high}/${t.flagSeverity.med}/${t.flagSeverity.low} | ${mdCell(top)} |`,
 		);
 	}
 	push(...more(d.trees.length, TMAX), "");
@@ -2775,7 +2777,7 @@ export function renderMd(d) {
 		}`,
 	);
 	push(
-		`- Child share of total cost: ${ds.childCostShare == null ? "-" : Math.round(ds.childCostShare * 100) + "%"}; per tree median ${ds.perTree.median ?? "-"}, max ${ds.perTree.max}; ${ds.perTree.treesWithDelegation}/${d.overview.trees} trees delegate`,
+		`- Child share of total cost: ${ds.childCostShare == null ? "-" : `${Math.round(ds.childCostShare * 100)}%`}; per tree median ${ds.perTree.median ?? "-"}, max ${ds.perTree.max}; ${ds.perTree.treesWithDelegation}/${d.overview.trees} trees delegate`,
 	);
 	push(
 		`- Median prompt chars ${ds.promptChars.median ?? "-"}; median result chars ${ds.resultChars.median ?? "-"} over ${ds.resultChars.known} delegations with a known result (${ds.resultChars.reported} adapter-reported). ${ds.backgroundWithoutResult} non-foreground delegations have no result size; launch acknowledgements are not counted as results.`,
@@ -3002,7 +3004,7 @@ export function renderEvent(ev, full) {
 				`id=${id(ev.callId)}`,
 				ev.isError ? `ERR(${u(ev.errorClass)})` : "ok",
 				`chars=${u(ev.outputChars)}`,
-				`dur=${ev.durationMs == null ? "-" : ev.durationMs + "ms"}`,
+				`dur=${ev.durationMs == null ? "-" : `${ev.durationMs}ms`}`,
 			);
 			if (ev.nestedUsage) p.push(`nestedCost=${u(ev.nestedUsage.cost)}`);
 			p.push(T(ev.output));
@@ -3115,9 +3117,9 @@ async function main() {
 		const t0 = performance.now();
 		const d = await analyseBundle(pos[0], configFromOpts(opt));
 		fs.mkdirSync(opt.out, { recursive: true });
-		fs.writeFileSync(path.join(opt.out, "digest.json"), JSON.stringify(d, null, 1) + "\n");
+		fs.writeFileSync(path.join(opt.out, "digest.json"), `${JSON.stringify(d, null, 1)}\n`);
 		const md = renderMd(d);
-		fs.writeFileSync(path.join(opt.out, "digest.md"), md + "\n");
+		fs.writeFileSync(path.join(opt.out, "digest.md"), `${md}\n`);
 		const o = d.overview;
 		console.log(
 			`digest: ${o.trees} trees, ${o.runs} runs, ${o.events} events, cost ${fmtCost(o.usage.cost)}, ${o.flags} flags (${o.flagSeverity.high} high, ${o.flagSeverity.med} med), ${Object.keys(d.dataGaps.counters).length} gap kinds -> ${path.join(opt.out, "digest.md")} (${md.split("\n").length} lines) in ${Math.round(performance.now() - t0)}ms`,
@@ -3144,7 +3146,7 @@ async function main() {
 		const gap = () => {};
 		for await (const ev of readEvents(f, gap)) {
 			if (typeof ev.seq === "number" && (ev.seq < lo || ev.seq > hi)) continue;
-			process.stdout.write(renderEvent(ev, !!opt.full) + "\n");
+			process.stdout.write(`${renderEvent(ev, !!opt.full)}\n`);
 		}
 	} else if (cmd === "runs") {
 		if (!pos[0]) throw new Error(USAGE);
@@ -3161,7 +3163,7 @@ async function main() {
 		const line = (r, depth) => {
 			const fc = Object.values(r.flagCounts).reduce((a, b) => a + b, 0);
 			console.log(
-				`${"  ".repeat(depth)}${r.id} [${r.kind ?? "?"}${r.agentType ? ":" + r.agentType : ""}${r.link?.confidence === "inferred" ? ",inferred" : ""}] ${clip(oneLine(r.label ?? (r.firstMessage ? `“${r.firstMessage}”` : "-")), 60)} | ${r.metrics.startedAt?.slice(0, 16) ?? "-"} | cost ${fmtCost(r.metrics.usage.cost)} | turns ${r.metrics.turns} | flags ${fc}`,
+				`${"  ".repeat(depth)}${r.id} [${r.kind ?? "?"}${r.agentType ? `:${r.agentType}` : ""}${r.link?.confidence === "inferred" ? ",inferred" : ""}] ${clip(oneLine(r.label ?? (r.firstMessage ? `“${r.firstMessage}”` : "-")), 60)} | ${r.metrics.startedAt?.slice(0, 16) ?? "-"} | cost ${fmtCost(r.metrics.usage.cost)} | turns ${r.metrics.turns} | flags ${fc}`,
 			);
 			for (const k of kids.get(r.id) || []) line(k, depth + 1);
 		};
