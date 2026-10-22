@@ -1482,7 +1482,7 @@ function readInterval(args) {
 function finaliseImpact(f, turnsAfter, cfg) {
 	const items = f._items || [];
 	let chars = items.length ? items.reduce((a, x) => a + x.chars, 0) : null;
-	let carried = items.length ? items.reduce((a, x) => a + (x.chars / cfg.charsPerToken) * turnsAfter(x.seq), 0) : null;
+	const carried = items.length ? items.reduce((a, x) => a + (x.chars / cfg.charsPerToken) * turnsAfter(x.seq), 0) : null;
 	if (f._chars != null) chars = f._chars;
 	const tokens = f._tokens != null ? f._tokens : chars != null ? Math.round(chars / cfg.charsPerToken) : null;
 	f.impact = {

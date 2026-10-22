@@ -208,7 +208,7 @@ export class LayoutController {
 			height = Number(dimensions[2]);
 		const mode = this.get(window, "mode") || "auto";
 		const override = Number(this.get(window, "width")) || 0;
-		let ids = this.panes(window);
+		const ids = this.panes(window);
 		const signature = [ids.slice().sort().join(","), width, height, main, mode, override].join(":");
 		// Geometry is deliberately absent: dragging a border must not snap back.
 		if (mode === "manual" || (!force && this.get(window, "signature") === signature)) return;
