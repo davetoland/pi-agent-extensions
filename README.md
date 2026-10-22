@@ -88,7 +88,7 @@ custom-footer:  ↑394k ↓24k R4.4M CH93.9% $3.802 (sub) 244k/1.1M (23.2%) (aut
 ```
 
 - **Tokens used, not just a percentage.** Context shows as tokens used against the window, with the percentage after it.
-- **Earlier warning.** The context reading turns amber at 40% and red at 60%, instead of Pi's 70% and 90%. The thresholds are two constants at the top of the file.
+- **Earlier warning.** The context reading turns amber at 20% and red at 40%, instead of Pi's 70% and 90%. These match where [`context-pressure`](#context-pressure) starts warning and blocking. The thresholds are two constants at the top of the file.
 - **Branch display that works in containers.** Pi notices branch changes by watching `.git`, which misses changes on some bind mounts, such as a Windows folder mounted into a Docker container. This footer also polls `HEAD`, and handles worktrees and submodules.
 
 It's one file with one event handler, which makes it a good starting point for your own footer. One difference from Pi's own footer: it can't show which model a routed request went to, because extensions can't see that.
@@ -159,7 +159,7 @@ Agents tend to keep reading and searching in their own context long after they s
 
 The warning repeats as usage climbs, and resets after compaction. Delegation and state-saving tools, such as `write`, `edit` and the `tmux_agent_*` tools, are never blocked or truncated. Like the other extensions, it fails open: on any error or missing usage data, nothing is blocked.
 
-It works best with a subagent tool to delegate to. It recognises sessions started by [`@gotgenes/pi-subagents`](https://www.npmjs.com/package/@gotgenes/pi-subagents) as subagents, and gives them the tighter limits. Every threshold can be changed with an environment variable, and `PI_CONTEXT_PRESSURE=off` turns it off. See [`context-pressure/README.md`](context-pressure/README.md) for the details.
+Its advice matches what's installed. With a subagent tool such as [`@gotgenes/pi-subagents`](https://www.npmjs.com/package/@gotgenes/pi-subagents), it tells the agent to delegate to subagents. With only [`tmux-agents`](#tmux-agents), it points to `tmux_agent_spawn`. With neither, it tells the agent to keep reads and searches narrow instead. Sessions started by `@gotgenes/pi-subagents` count as subagents and get the tighter limits. Every threshold can be changed with an environment variable, and `PI_CONTEXT_PRESSURE=off` turns it off. See [`context-pressure/README.md`](context-pressure/README.md) for the details.
 
 ---
 

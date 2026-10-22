@@ -32,7 +32,7 @@ Key takeaways:
 
 ## Extending Pi: 01 - Custom Footer (Small Tweaks, Easy Wins)
 
-Pi's footer shows tokens, cache, cost and how full the context window is. [`custom-footer`](../custom-footer) replaces it with a version that makes a few small changes: context shows as tokens used against the window (`244k/1.1M (23.2%)`) rather than only a percentage, the reading turns amber at 40% and red at 60% instead of 70% and 90%, and the git branch shown stays correct when the project folder is mounted into a Docker container, where Pi's file watcher can miss branch changes.
+Pi's footer shows tokens, cache, cost and how full the context window is. [`custom-footer`](../custom-footer) replaces it with a version that makes a few small changes: context shows as tokens used against the window (`244k/1.1M (23.2%)`) rather than only a percentage, the reading turns amber at 20% and red at 40% instead of 70% and 90%, and the git branch shown stays correct when the project folder is mounted into a Docker container, where Pi's file watcher can miss branch changes.
 
 It's the smallest extension in the series: one file, one event handler and one render function. The point isn't the features. It's how little it takes to replace part of Pi's interface with your own.
 

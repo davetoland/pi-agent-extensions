@@ -33,6 +33,8 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 
 import {
 	type Block,
+	type Delegation,
+	delegationFor,
 	evaluate,
 	isExempt,
 	isSubagentSessionFile,
@@ -101,6 +103,16 @@ export default function (pi: ExtensionAPI) {
 		return subagentCache.subagent;
 	};
 
+	// Checked on each call: delegation tools can be added, removed or switched off during a session,
+	// and tmux-agents registers none outside tmux.
+	const delegation = (): Delegation => {
+		try {
+			return delegationFor(pi.getActiveTools());
+		} catch {
+			return "none";
+		}
+	};
+
 	const pressureFor = (ctx: ExtensionContext): { pressure: Pressure | undefined; enabled: boolean } => {
 		const config = parseConfig(process.env);
 
@@ -108,7 +120,7 @@ export default function (pi: ExtensionAPI) {
 			return { pressure: undefined, enabled: false };
 		}
 
-		return { pressure: evaluate(ctx.getContextUsage(), isSubagent(ctx), config), enabled: true };
+		return { pressure: evaluate(ctx.getContextUsage(), isSubagent(ctx), config, delegation()), enabled: true };
 	};
 
 	pi.on("session_start", async () => reset());

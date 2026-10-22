@@ -28,12 +28,20 @@ export interface Usage {
 
 export type Level = "none" | "warn" | "block";
 
+/**
+ * Where a main session can hand work off: a subagent tool (such as `@gotgenes/pi-subagents`), a tmux-agents
+ * child, or nowhere. Pi ships with neither, so the advice must match what is installed.
+ */
+export type Delegation = "subagent" | "tmux" | "none";
+
 export interface Pressure {
 	level: Level;
 	tokens: number;
 	contextWindow: number;
 	percent: number;
 	subagent: boolean;
+	/** How a main session can delegate. Subagent sessions are always told to return instead. */
+	delegation: Delegation;
 	/** Re-warn step index: 0 when the warn threshold is first crossed, +1 per step after. -1 below warn. */
 	step: number;
 }
@@ -72,6 +80,11 @@ export const RESULT_MAX_BYTES = 4 * 1024;
 export const READ_RESULT_MAX_BYTES = READ_BLOCK_BYTES;
 /** Share of a truncated result kept from the end (exit codes, "Full output: …" trailers). */
 const TAIL_SHARE = 0.25;
+
+/** The tool that starts a subagent, from `@gotgenes/pi-subagents`. */
+export const SUBAGENT_TOOL = "subagent";
+/** The tool that starts another agent, from tmux-agents. */
+export const TMUX_SPAWN_TOOL = "tmux_agent_spawn";
 
 const OFF_VALUES = new Set(["off", "0", "false", "no", "disabled"]);
 
@@ -119,7 +132,12 @@ export function parseConfig(env: Record<string, string | undefined>): Config {
  * Work out the pressure level. Returns undefined (no pressure, fail open) when
  * usage is missing or not a usable number.
  */
-export function evaluate(usage: Usage | undefined, subagent: boolean, config: Config): Pressure | undefined {
+export function evaluate(
+	usage: Usage | undefined,
+	subagent: boolean,
+	config: Config,
+	delegation: Delegation = "subagent",
+): Pressure | undefined {
 	if (
 		!usage ||
 		typeof usage.tokens !== "number" ||
@@ -158,7 +176,7 @@ export function evaluate(usage: Usage | undefined, subagent: boolean, config: Co
 		step = Math.max(0, Math.floor((tokens - start) / size));
 	}
 
-	return { level, tokens, contextWindow, percent, subagent, step };
+	return { level, tokens, contextWindow, percent, subagent, delegation, step };
 }
 
 /**
@@ -176,6 +194,13 @@ export function nextWarn(pressure: Pressure | undefined, lastStep: number): { wa
 	}
 
 	return { warn: false, lastStep: Math.min(lastStep, pressure.step) };
+}
+
+/** Work out how a main session can delegate, from the names of the tools the model can call. */
+export function delegationFor(activeTools: readonly string[]): Delegation {
+	if (activeTools.includes(SUBAGENT_TOOL)) return "subagent";
+	if (activeTools.includes(TMUX_SPAWN_TOOL)) return "tmux";
+	return "none";
 }
 
 export function formatTokens(tokens: number): string {
@@ -205,36 +230,58 @@ function where(p: Pressure): string {
 		: `${formatTokens(p.tokens)} tokens (${wholePercent(p.percent)}% of ${formatTokens(p.contextWindow)})`;
 }
 
+/** How to tell a main session to delegate, or undefined when it has nothing to delegate to. */
+function delegateTo(p: Pressure): string | undefined {
+	switch (p.delegation) {
+		case "subagent":
+			return "a subagent";
+		case "tmux":
+			return `another agent with ${TMUX_SPAWN_TOOL}`;
+		case "none":
+			return undefined;
+		default: {
+			const _exhaustive: never = p.delegation;
+			return _exhaustive;
+		}
+	}
+}
+
 export function warnNote(p: Pressure): string {
 	if (p.subagent) {
 		return `Context at ${formatTokens(p.tokens)} tokens. Finish the current step and return your findings now. Do not start new reading.`;
 	}
 
-	return (
-		`Context at ${where(p)}. ` +
-		"Delegate further reading and searching to subagents and keep their returns short. " +
-		"Save any state you need to a file or the work item."
-	);
+	const target = delegateTo(p);
+	const advice =
+		p.delegation === "subagent"
+			? "Delegate further reading and searching to subagents and keep their returns short."
+			: target
+				? `Delegate further reading and searching to ${target} and keep what comes back short.`
+				: "Keep further reads and searches narrow, with offset/limit and targeted patterns, and avoid re-reading files.";
+
+	return `Context at ${where(p)}. ${advice} Save any state you need to a file or the work item.`;
 }
 
 export function readBlockReason(p: Pressure): string {
+	const narrow = `read a narrow range with offset/limit (limit <= ${READ_MAX_LIMIT_LINES})`;
+
 	if (p.subagent) {
-		return (
-			`Blocked by context-pressure: context at ${where(p)}. Return your findings now. ` +
-			`If one more detail is essential, read a narrow range with offset/limit (limit <= ${READ_MAX_LIMIT_LINES}).`
-		);
+		return `Blocked by context-pressure: context at ${where(p)}. Return your findings now. If one more detail is essential, ${narrow}.`;
 	}
 
-	return (
-		`Blocked by context-pressure: context at ${where(p)}. Delegate this read to a subagent, ` +
-		`or read a narrow range with offset/limit (limit <= ${READ_MAX_LIMIT_LINES}).`
-	);
+	const target = delegateTo(p);
+	const action = target ? `Delegate this read to ${target}, or ${narrow}.` : `Instead, ${narrow}.`;
+
+	return `Blocked by context-pressure: context at ${where(p)}. ${action}`;
 }
 
 function truncationNote(p: Pressure, originalBytes: number, keptBytes: number): string {
+	const target = p.subagent ? undefined : delegateTo(p);
 	const action = p.subagent
 		? "Return your findings now."
-		: "Delegate this to a subagent, or narrow the command or range.";
+		: target
+			? `Delegate this to ${target}, or narrow the command or range.`
+			: "Narrow the command or range.";
 
 	return (
 		`[Truncated by context-pressure: context at ${where(p)}. Output was ${formatKB(originalBytes)}; ` +
