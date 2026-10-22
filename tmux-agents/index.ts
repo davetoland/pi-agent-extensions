@@ -1,6 +1,4 @@
-import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
-import { StringEnum } from "@earendil-works/pi-ai";
+import { randomUUID } from "node:crypto";
 import {
 	accessSync,
 	constants,
@@ -8,18 +6,20 @@ import {
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
-	readFileSync,
 	readdirSync,
+	readFileSync,
 	renameSync,
 	statSync,
 	unlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { randomUUID } from "node:crypto";
-import { fileURLToPath } from "node:url";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
+import { StringEnum } from "@earendil-works/pi-ai";
+import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 
 const SELF = fileURLToPath(import.meta.url);
 const CHILD_DIR = "PI_TMUX_AGENT_DIR";
@@ -488,12 +488,12 @@ export class TmuxAgents {
 					.catch(() => undefined);
 			}
 			const deadline = Date.now() + (params.waitMs ?? 10000);
-			let state;
-			do {
-				state = await this.inspect(record, signal);
-				if (state.status !== "starting" || Date.now() >= deadline) break;
+			// Poll until the child reports something other than "starting", or the wait runs out.
+			let state = await this.inspect(record, signal);
+			while (state.status === "starting" && Date.now() < deadline) {
 				await delay(100, undefined, { signal });
-			} while (true);
+				state = await this.inspect(record, signal);
+			}
 			return {
 				id: pane.id,
 				window: pane.window,

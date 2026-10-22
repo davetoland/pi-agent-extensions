@@ -1,9 +1,7 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { dirname, isAbsolute, join, matchesGlob, relative, resolve, sep } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, isReadToolResult, isToolCallEventType } from "@earendil-works/pi-coding-agent";
-
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-
-import { dirname, isAbsolute, join, relative, resolve, sep, matchesGlob } from "node:path";
 
 interface Instruction {
 	path: string;

@@ -1,14 +1,15 @@
 #!/usr/bin/env node
+
 // pi-session-eval adapter: converts pi coding-agent session JSONL files into a
 // harness-neutral trace bundle (schema version 1). Node >= 22, ESM, no npm deps.
 //
 // Contract: evaluate-session/references/trace-bundle.md
 
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import * as fsp from "node:fs/promises";
-import * as path from "node:path";
 import * as os from "node:os";
-import { createHash } from "node:crypto";
+import * as path from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 

@@ -1,6 +1,6 @@
+import { basename } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
-import { basename } from "node:path";
 
 // .env and .env.local hold secrets. .env.example is a safe template.
 const isSecret = (path: string) => /^\.env(\..+)?$/.test(basename(path)) && !path.endsWith(".example");
