@@ -30,17 +30,17 @@ Key takeaways:
 
 ---
 
-## Extending Pi: 01 - Custom Footer (Session Status at a Glance)
+## Extending Pi: 01 - Custom Footer (Small Tweaks, Easy Wins)
 
-[`custom-footer`](../custom-footer) replaces the footer at the bottom of every Pi session. It shows tokens in and out, cache reads and writes, the cache hit rate, the running cost (marked "(sub)" on a subscription), and context used against the window. The context reading turns amber at 40% and red at 60%, well before Pi's own 70% and 90%, so there's time to compact or start fresh.
+Pi's footer shows tokens, cache, cost and how full the context window is. [`custom-footer`](../custom-footer) replaces it with a version that makes a few small changes: context shows as tokens used against the window (`244k/1.1M (23.2%)`) rather than only a percentage, the reading turns amber at 40% and red at 60% instead of 70% and 90%, and the git branch shown stays correct when the project folder is mounted into a Docker container, where Pi's file watcher can miss branch changes.
 
-It also polls the git `HEAD`, so the branch shown stays right on bind mounts, such as Docker on Windows, where Pi's file watcher misses changes. It's the simplest extension in the series: one file, one event handler, and one render function.
+It's the smallest extension in the series: one file, one event handler and one render function. The point isn't the features. It's how little it takes to replace part of Pi's interface with your own.
 
 Key takeaways:
 
-✅ Visibility: cost, cache and context in one line, always on screen.  
-✅ Early warning: amber and red thresholds set for how agents behave, not for the hard limit.  
-✅ Make it yours: change one render function to show what matters to you.
+✅ Easy to extend: replacing part of Pi's interface takes one handler and one render function.  
+✅ Start small: a few tweaks to something you look at all day add up.  
+✅ Fix your own setup: when something doesn't work where you run it, you can change it yourself.
 
 ---
 
