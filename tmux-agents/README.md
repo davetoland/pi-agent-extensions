@@ -2,7 +2,11 @@
 
 Local Pi tools for interactive child sessions in tmux. This extension runs persistent, unreferenced watchers: children poll their spawn-family message store and automatically inject permitted peer messages into their sessions. Parent-owned families also poll for messages addressed to the parent. A delivered child message starts a real model turn; it is not a notification that requires a human to copy text into the child.
 
-Requires Linux with `/proc`, tmux, and Pi. Tested with Pi 0.85.1, tmux 3.5a, and Node 22. Run the parent Pi inside tmux. This directory is auto-discovered at `~/.pi/agent/extensions/tmux-agents/index.ts`. Use `/reload` in the parent when you want to enable it. Installing these files does not reload or control existing sessions.
+Requires Linux with `/proc`, tmux, and Pi. Tested with Pi 0.85.1, tmux 3.5a, and Node 22. Run the parent Pi inside tmux.
+
+Anywhere else (native Windows, macOS, or Linux outside tmux) the extension stays inactive: it registers no tools and changes nothing, so leaving it installed is harmless. On Windows, run Pi inside WSL, in tmux, for example from a WSL tab in Windows Terminal.
+
+Install it with the rest of this repository's package (see the [main README](../README.md)), or copy this directory to `~/.pi/agent/extensions/tmux-agents/`. Use `/reload` in a running parent to enable it. Installing does not reload or control existing sessions.
 
 ## Tools
 
@@ -196,6 +200,51 @@ Each refresh stops after settlement or after ten minutes. A timeout warns in the
 
 Snapshots are not live token counters during streaming. `updatedAt` identifies their age. Only provider and model IDs are exposed, not model configuration, headers, or credentials.
 
+## Window menu
+
+Right-click a window's tab in the tmux status bar to open a menu for that window:
+
+| Item | What it does |
+| --- | --- |
+| Panes to Windows | Breaks every pane except the first out into its own window |
+| Join *window* | Moves every pane of the clicked window into the chosen window, lays them out side by side, and switches you there |
+| Send Left / Send Right / Send to End | Moves the window along the tab bar, keeping window numbers contiguous |
+| Rename | Renames the window's tab |
+| Kill | Closes the window, and anything running in it, after you confirm |
+
+Items that don't apply, such as Send Left on the first tab, are greyed out. Moving panes between windows is safe for spawned agents: they are tracked by pane ID, process ID and process start time, which survive a move, so they stay manageable from the parent. Rename changes only the tab label. Tools and peer messages still address an agent by the name it was spawned with.
+
+The menu is installed when a parent Pi starts inside tmux. It binds `MouseDown3Status`, a right-click on a window tab, which replaces tmux's built-in window menu for that tmux server until the server exits. It replaces only tmux's default binding or an earlier copy of this menu. If you've bound that key yourself, your binding is kept and Pi shows a note. To stop the extension installing the menu, start Pi with `PI_TMUX_AGENTS_MENU=off`. To remove it from a running tmux server, run `tmux unbind-key -n MouseDown3Status`.
+
+The menu is a standalone script, [`tmux-menu.sh`](tmux-menu.sh), so you can also bind it yourself without Pi. Its header shows the binding. It uses `display-menu -M -O` where tmux supports them and falls back to a plain menu on versions that don't, such as tmux 3.4.
+
+In windows managed by the pane layout (below), the menu also offers **Layout...** and **Focus / Restore active agent**, and joining into one of those windows uses its remembered layout.
+
+## Pane layout
+
+When agents share a window, [`layout.mjs`](layout.mjs) arranges them automatically: the parent Pi is the main pane on the left, and its agents fill the space to the right. The layout is recalculated when an agent is added or exits, when panes are joined or broken out, and when the terminal is resized. Dragging a border doesn't snap back, because geometry alone doesn't trigger a recalculation.
+
+Right-click inside an agent pane for its menu:
+
+| Item | What it does |
+| --- | --- |
+| Layout... | Choose **Auto** (the default), **Main + stack**, **Three columns**, **Equal grid** or **Keep current layout**, set the main pane's width (automatic, or 30% to 70%), or reapply the layout now |
+| Focus this agent / Restore layout | Zooms the pane to fill the window, and back |
+| Keep current layout (drag borders) | Stops automatic arrangement for this window |
+| Use this pane as main | Makes this pane the large one |
+| Switch to *agent* | Jumps to that agent's pane |
+
+**Auto** gives the main pane 60% of the width with one agent, 50% with up to three, 40% with up to six and 35% beyond that, and splits the agents into more columns from four agents up, or sooner if a single column would make them too short. A terminal too small for the chosen layout keeps its current layout and shows a message.
+
+A parent Pi sets this up when it starts inside tmux. It runs `layout.mjs` with `node`, which must be on your `PATH`:
+
+- It turns on mouse mode for the parent's tmux session, which the right-click menus need.
+- It registers six tmux hooks (`window-layout-changed`, `window-resized`, `window-linked`, `pane-exited`, `after-split-window` and `after-kill-pane`) at index 81731, so a restart or `/reload` replaces them rather than adding more. Each hook checks the window's size and pane count inside tmux first, so mouse drags don't start a `node` process.
+- It binds a right-click in a pane (`MouseDown3Pane`) to the agent menu in managed windows only. Elsewhere, the key keeps whatever it did before.
+- Each spawned agent is attached to its parent's layout and labelled with its name.
+
+All of this lasts until the tmux server exits. Start Pi with `PI_TMUX_AGENTS_LAYOUT=off` to turn off the layout entirely. Layout settings are stored as `@piao_*` tmux window and pane options.
+
 ## State, lifecycle, and trust
 
 State lives under `$TMPDIR/pi-tmux-agents-<uid>/<parent-pid>-<start-ticks>`, normally in `/tmp`:
@@ -212,7 +261,7 @@ $TMPDIR/pi-tmux-agents-<uid>/<parent-pid>-<parent-start-ticks>/
 
 Directories are owner-only (`0700`) and files use mode `0600`. Spawn passes `PI_TMUX_AGENT_DIR`, `PI_TMUX_AGENT_TOKEN`, `PI_TMUX_AGENT_FAMILY`, and `PI_TMUX_AGENT_NAME` to each child. Snapshots and state updates use atomic replacement. Nothing is deleted in this version: message records and receipts accumulate, cleanup is manual, and records can contain task text.
 
-The extension validates the tmux socket, server identity, session, window, pane ID, PID, and Linux process start time before `tmux_agent_send`. A child that inherits another child's environment cannot publish under that identity unless it is the original pane process.
+The extension validates the tmux socket, server identity, pane ID, PID, and Linux process start time before `tmux_agent_send`. Session and window are not checked, because moving a pane between windows keeps its pane ID; `tmux_agent_list` reports each agent's current window. A child that inherits another child's environment cannot publish under that identity unless it is the original pane process.
 
 The registry survives `/reload` within the same parent process. It does not reconnect from a different parent process or adopt a manually moved or replaced pane. Children remain interactive and do not close when the parent exits.
 
@@ -229,7 +278,7 @@ These API limits do not constrain a malicious same-user process that bypasses th
 ## Verification
 
 ```bash
-node --test /root/.pi/agent/extensions/tmux-agents/test.mjs
+node --test tmux-agents/test.mjs
 ```
 
 Tests use Node's test runner, the installed Pi loader, `tsc`, and an isolated temporary tmux socket. No packages are installed. Set `PI_TEST_PACKAGE_DIR` if the Pi package is not under `npm root -g`.

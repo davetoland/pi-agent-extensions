@@ -1,6 +1,6 @@
 # Pi Coding Agent Extensions
 
-A collection of custom extensions for the [Pi coding agent](https://pi.dev): small, focused add-ons that make day-to-day sessions tidier, leaner on context, and easier to inspect.
+A collection of custom extensions for the [Pi coding agent](https://pi.dev): focused add-ons that make day-to-day sessions tidier, leaner on context, easier to inspect, and able to run several agents side by side.
 
 Everything ships as a single Pi package. Install the lot, or pick just the extensions you want.
 
@@ -8,13 +8,13 @@ Everything ships as a single Pi package. Install the lot, or pick just the exten
 
 ## Extensions at a glance
 
-| Extension | What it does | Status |
-| --- | --- | --- |
-| [`custom-footer`](#custom-footer) | A reworked session footer with clearer context, cache and cost stats | ✅ Available |
-| [`conditional-instructions`](#conditional-instructions) | Load instructions only when the agent touches matching files | ✅ Available |
-| [`session-eval`](#session-eval) | Export sessions as trace bundles for evaluation | ✅ Available |
-| [`skill-read-dedupe`](#skill-read-dedupe) | Stop the same skill being loaded into context twice | 🔜 Coming soon |
-| [`tmux-agents`](#tmux-agents) | Run multiple Pi instances in tmux, navigable as TUI tabs | 🔜 Coming soon |
+| Extension | What it does |
+| --- | --- |
+| [`custom-footer`](#custom-footer) | A reworked session footer with clearer context, cache and cost stats |
+| [`conditional-instructions`](#conditional-instructions) | Load instructions only when the agent touches matching files |
+| [`skill-read-dedupe`](#skill-read-dedupe) | Stop the agent re-reading a skill that's already in context |
+| [`tmux-agents`](#tmux-agents) | Spawn, drive and coordinate other Pi agents in tmux windows |
+| [`session-eval`](#session-eval) | Export sessions as trace bundles, with a skill to evaluate them |
 
 ---
 
@@ -24,6 +24,7 @@ Everything ships as a single Pi package. Install the lot, or pick just the exten
 
 - [Pi coding agent](https://pi.dev)
 - Node.js 22.5 or later (`conditional-instructions` uses `matchesGlob` from `node:path`)
+- For `tmux-agents` only: Linux and [tmux](https://github.com/tmux/tmux). On Windows, use WSL. Elsewhere it stays inactive.
 
 ### Install everything
 
@@ -31,7 +32,7 @@ Everything ships as a single Pi package. Install the lot, or pick just the exten
 pi install git:github.com/davetoland/pi-agent-extensions
 ```
 
-Add `-l` to install into the current project only. To pin a release, add the tag:
+Add `-l` to install into the current project only. To pin a release, add its tag:
 
 ```bash
 pi install git:github.com/davetoland/pi-agent-extensions@v0.1.0
@@ -41,14 +42,17 @@ Update or remove it with `pi update` and `pi remove`.
 
 ### Install only some extensions
 
-Install the package, then narrow it in `~/.pi/agent/settings.json` by replacing its source string with an object that lists the extensions you want:
+Install the package, then narrow it in `~/.pi/agent/settings.json` by replacing its source string with an object that lists what you want:
 
 ```json
 {
   "source": "git:github.com/davetoland/pi-agent-extensions",
-  "extensions": ["custom-footer/index.ts", "session-eval/index.ts"]
+  "extensions": ["custom-footer/index.ts", "skill-read-dedupe/index.ts"],
+  "skills": []
 }
 ```
+
+Leave out a key to load everything of that type, or set it to `[]` to load none.
 
 ### Try one without installing
 
@@ -65,6 +69,8 @@ Each extension is a self-contained folder. Copy one into `~/.pi/agent/extensions
 cp -r pi-agent-extensions/custom-footer ~/.pi/agent/extensions/
 ```
 
+For `session-eval`, also copy its skill: `cp -r pi-agent-extensions/session-eval/evaluate-session ~/.pi/agent/skills/`.
+
 ---
 
 ## custom-footer
@@ -79,10 +85,10 @@ A replacement for the footer at the bottom of every Pi session in the terminal. 
 ```
 
 **Highlights**
-- **Clear context usage.** Tokens used against the context window, with a percentage that turns amber above 70% and red above 90%.
-- **Cumulative usage.** Input, output, cache read and cache write totals across the session, including tool results, compactions and branch summaries.
+- **Clear context usage.** Tokens used against the context window, with a percentage that turns amber at 40% and red at 60%, earlier than Pi's own footer (70% and 90%).
+- **Cumulative usage.** Input, output, cache read and cache write totals across the whole session, including tool results, compactions, branch summaries and cache warming.
 - **Cache hit rate.** The share of the latest prompt served from cache.
-- **Cost, with subscription awareness.** Shows `(sub)` when you're on an OAuth subscription rather than paying per token.
+- **Cost, with subscription awareness.** Shows `(sub)` when you're on a subscription rather than paying per token.
 - **Reliable branch display.** Pi detects branch changes by watching `.git`, which misses changes on some bind mounts (for example 9p from a Windows host into a container). This footer also polls `HEAD`, and handles worktrees and submodules.
 - **Plays well with others.** Status lines from other extensions are kept on their own line.
 
@@ -110,15 +116,63 @@ applyTo: "src/**/*.tsx, src/**/*.jsx"
 - Co-locate tests as `Component.test.tsx`.
 ```
 
-- `applyTo` takes one or more comma-separated globs, matched against the file's path relative to its repository root (worktrees included).
+- `applyTo` takes one or more comma-separated globs, matched against the file's path relative to its repository root (worktrees included). `*` doesn't cross folders, so use `**/*.ts` to match `.ts` files at any depth.
 - `description` is optional and is shown to the agent in the instruction index.
 
 ### How it works
 
 1. **Index, not content.** At the start of each turn the agent gets a short list of the instruction files and their patterns, not their contents.
-2. **Loaded on read.** When the agent reads a matching file, the instructions are appended to that read result, once per session.
+2. **Loaded on read.** When the agent successfully reads a matching file, the instructions are appended to that read result, once per session.
 3. **Enforced before edits.** If the agent tries to edit or write a matching file before the instructions are in context, the call is blocked and the agent is told which file to read first.
 4. **Compaction-aware.** After compaction, instructions are treated as unloaded, so they're supplied again the next time they're needed.
+
+---
+
+## skill-read-dedupe
+
+**Never pay for the same skill twice.**
+
+Agents sometimes re-read a `SKILL.md` that's already in context. `skill-read-dedupe` spots this and blocks the duplicate read, telling the agent to use the copy it already has.
+
+It decides from the context Pi actually sent on the latest model request, so compaction, `/new` and `/tree` navigation are handled for free: if the earlier copy is no longer in context, the read goes ahead.
+
+**Highlights**
+- Recognises both earlier full reads and `/skill:name` injections.
+- Only blocks when the copy in context is complete and matches the file byte for byte, so an edited skill is always re-read.
+- Fails open: on any error or doubt, the read is allowed.
+- Turn it off for a run with `PI_SKILL_READ_DEDUPE=off`.
+
+See [`skill-read-dedupe/README.md`](skill-read-dedupe/README.md) for the exact matching rules and known gaps.
+
+---
+
+## tmux-agents
+
+**Multiple Pi agents, one terminal.**
+
+`tmux-agents` lets a Pi agent spawn other interactive Pi agents, each in its own tmux window or pane. Every child shows up as a labelled tab in tmux's window bar, so you can switch to it, watch it work, or take over. Agents that share a window are laid out automatically around the parent, with a choice of layouts from a right-click menu in any agent pane. Right-click a tab for a menu to split its panes into windows, join it into another window, reorder, rename or close it. Agents stay manageable however you rearrange them.
+
+The parent agent drives its children through tools:
+
+| Tool | What it does |
+| --- | --- |
+| `tmux_agent_spawn` | Start a child Pi in a new window or pane, optionally with its own working directory, system prompt, model and thinking level |
+| `tmux_agent_send` | Submit a prompt or slash command to a ready child |
+| `tmux_agent_read` | Read a child's latest reply, or its visible terminal |
+| `tmux_agent_context` | Check a child's context usage, model and thinking level |
+| `tmux_agent_list` | List the children this agent has spawned |
+| `tmux_agent_permissions` | Allow or revoke messaging between agents |
+| `tmux_agent_peers` | List the agents the caller may message |
+| `tmux_agent_message` | Send a steering or interrupting message to one agent |
+| `tmux_agent_broadcast` | Message all or selected children at once |
+| `tmux_agent_messages` | Inspect the family's messages and their delivery status |
+
+**Highlights**
+- **Safe input.** Text is only sent to a child that's idle with an empty editor, and is pasted literally, so nothing is interpreted as a shell command.
+- **Agent-to-agent messaging.** Children can message each other once the parent grants a link. Messages to the parent only raise a badge in its footer, so a child can never start work in the parent session.
+- **Auditable delivery.** Every message gets a delivery receipt that the parent can inspect.
+
+**Requires:** Linux and tmux, with the parent Pi running inside tmux. On native Windows, macOS, or outside tmux, it stays inactive and registers no tools; Windows users can run Pi in WSL. The tab menu replaces tmux's built-in window menu; start Pi with `PI_TMUX_AGENTS_MENU=off` to keep tmux's own, or `PI_TMUX_AGENTS_LAYOUT=off` to turn off automatic layout. The layout needs `node` on your `PATH`. See [`tmux-agents/README.md`](tmux-agents/README.md) for the full tool reference, delivery semantics and trust boundary.
 
 ---
 
@@ -126,7 +180,7 @@ applyTo: "src/**/*.tsx, src/**/*.jsx"
 
 **See exactly what happened in a session.**
 
-`session-eval` exports Pi sessions as a **trace bundle**: a structured, harness-neutral record of one or more sessions, including context and token usage, tool calls, timing, subagents and peers. It pairs with the `evaluate-session` skill, which reads the bundle and writes an evaluation report.
+`session-eval` exports Pi sessions as a **trace bundle**: a structured, harness-neutral record of one or more sessions, including context and token usage, tool calls, timing, subagents and peers. It ships with the `evaluate-session` skill, which reads a bundle and writes an evaluation report: wasted effort, weak delegation, instruction and skill gaps, and work that should be scripted, each with a recommended fix.
 
 ### Command: `/evaluate-session`
 
@@ -138,7 +192,7 @@ applyTo: "src/**/*.tsx, src/**/*.jsx"
 /evaluate-session --all-cwds --name "run-\d+" --latest 5
 ```
 
-The command exports the selected sessions to a new report folder under `~/.pi/agent-evals/`, then starts the `evaluate-session` skill with the bundle location. If the skill isn't installed, the bundle is still written and you're told where.
+The command exports the selected sessions to a new report folder under `~/.pi/agent-evals/`, then starts the `evaluate-session` skill with the bundle location.
 
 ### Tool: `session_eval_export`
 
@@ -150,29 +204,14 @@ Alongside exporting, the extension records a few facts Pi doesn't keep on its ow
 
 - Which extensions and Pi version were active
 - How long each tool call took
-- Links to peer sessions started by `tmux-agents`
+- Links to child sessions started by `tmux-agents`
 
 ### Good to know
 
 - Forked and cloned sessions aren't double-counted.
 - Excerpts are redacted for common secret formats. Redaction is pattern-based, so review a bundle before you share it.
+- Want to judge sessions your own way? Write your own skill against the bundle format in [`trace-bundle.md`](session-eval/evaluate-session/references/trace-bundle.md). Name it `evaluate-session` and the command will hand bundles to it.
 - Full details of the command, the tool, the selection rules and the bundle format are in [`session-eval/README.md`](session-eval/README.md).
-
----
-
-## skill-read-dedupe
-
-🔜 **Coming soon.**
-
-Agents sometimes try to load a skill that's already in context. `skill-read-dedupe` detects this and blocks the duplicate read, saving context space. It handles `/new` and compaction, so a skill that has genuinely dropped out of context can be loaded again.
-
----
-
-## tmux-agents
-
-🔜 **Coming soon.** Requires [tmux](https://github.com/tmux/tmux).
-
-`tmux-agents` hosts separate Pi instances in tmux windows and panes, and shows them as tabs in the Pi TUI. Arrange, split, join, rename and kill agents using tmux controls, without leaving your session.
 
 ---
 
@@ -184,12 +223,42 @@ Agents sometimes try to load a skill that's already in context. `skill-read-dedu
 │   └── index.ts
 ├── conditional-instructions/
 │   └── index.ts
+├── skill-read-dedupe/
+│   ├── index.ts
+│   └── README.md
+├── tmux-agents/
+│   ├── index.ts
+│   ├── tmux-menu.sh       right-click window menu
+│   ├── layout.mjs         automatic pane layout
+│   ├── test.mjs
+│   └── README.md
 ├── session-eval/
 │   ├── index.ts
 │   ├── adapter.mjs
-│   └── README.md
+│   ├── README.md
+│   ├── evaluate-session/        the skill
+│   │   ├── SKILL.md
+│   │   ├── references/
+│   │   └── scripts/digest.mjs
+│   └── test/
 ├── package.json
 └── LICENSE
 ```
 
+## Tests
+
+```bash
+npm test
+```
+
+The `tmux-agents` tests use your installed Pi (set `PI_TEST_PACKAGE_DIR` if it isn't under `npm root -g`) and an isolated tmux server. The `session-eval` tests need only Node.
+
 ---
+
+## Contributing
+
+Issues and pull requests are welcome. If you've built something on top of these extensions, or have an idea for a new one, open an issue and let's talk.
+
+## License
+
+[MIT](LICENSE)

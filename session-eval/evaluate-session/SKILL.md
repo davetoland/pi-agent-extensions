@@ -10,7 +10,7 @@ Use `evaluate-session` to answer:
 
 > How well did the agent work, what did it cost, and what should change in the instructions, skills, tooling, or environment so the next session does better?
 
-The subject can be one session, one session and the agents it delegated to, or many sessions examined together for recurring patterns. Evaluation is retrospective and independent. It is not a continuation of the evaluated work. Use `reconstruct-context` or `handoff` to resume work instead.
+The subject can be one session, one session and the agents it delegated to, or many sessions examined together for recurring patterns. Evaluation is retrospective and independent. It is not a continuation of the evaluated work, and it does not resume it.
 
 ## Core rules
 
@@ -74,7 +74,7 @@ For each session tree being judged individually:
 
 - **Intent:** the task as first requested, plus later changes the user made. Use the first human `user` events.
 - **Outcome:** what the agent claimed at the end, and what the trace shows it verified.
-- **External outcome**, only when a judgement depends on it, for example whether the change was merged or reverted, or whether the work item was accepted. Obtain it through the work-management and source-control routes in `PROJECT_PROFILE.md` when one exists. Otherwise, ask the user. If it is not available, mark the affected findings "outcome not established".
+- **External outcome**, only when a judgement depends on it, for example whether the change was merged or reverted, or whether the work item was accepted. Obtain it through the project's work-management and source-control tools when its instructions describe them. Otherwise, ask the user. If it is not available, mark the affected findings "outcome not established".
 
 For corpus evaluations, first group trees into families of similar work, such as the same task type, workflow step, or driver. Establish outcome for a few trees per family, chosen across the time range. Report the sample size. Only do this when patterns depend on outcome.
 
@@ -124,7 +124,7 @@ Assign every confirmed finding one primary cause and one route:
 
 | Cause | Route |
 | --- | --- |
-| Missing, conflicting, duplicated, stale, or unnecessary standing instruction | `agent-guidance`, with the proposed change stated |
+| Missing, conflicting, duplicated, stale, or unnecessary standing instruction | The standing instructions (such as `AGENTS.md`), with the proposed change stated |
 | Repeated discovery or improvisation of something that should be fixed and known in advance | New or improved script, CLI wrapper, configuration, or provisioning, with a sketch of the interface |
 | Skill gap, poor triggering, unclear procedure, unused skill, or a missing skill the agent reinvented | Skill amendment, addition, or removal, with the proposed description or section change |
 | Harness behaviour or missing harness capability | Harness or extension change |
@@ -149,7 +149,7 @@ Write `<reportDir>/report.md`, keeping the digest files beside it. Structure:
 6. **Dismissed leads:** only those that would otherwise mislead a reader, including digest flags with high false-positive rates.
 7. **Not assessed:** dimensions or questions skipped, and why.
 
-Apply `technical-writing` to the report.
+Write the report plainly and concisely: lead with the findings, and give each one its evidence.
 
 ## Stop condition
 
@@ -157,6 +157,6 @@ Stop when the report is written and every recommendation traces back to at least
 
 ## Mutation boundary
 
-This skill writes only the digest and report files. Changes to standing instructions route through `agent-guidance`. Changes to skills, scripts, harness extensions, and environment go to their owners under the user's authorised workflow.
+This skill writes only the digest and report files. Changes to standing instructions, skills, scripts, harness extensions, and environment go to their owners under the user's authorised workflow.
 
-Recommend the next step without starting it. Use the project's workflow policy in `PROJECT_PROFILE.md` where it defines one. Otherwise, use the toolkit's default transitions in `../how-to/references/workflow.md`, resolved from this skill's directory, not the repository. If you cannot read that file, say so and ask the user for the next step. Do not guess it. When this skill runs inside another workflow, return the result to that workflow instead.
+Recommend the next step without starting it. Use the project's workflow where its instructions define one. Otherwise, ask the user for the next step. Do not guess it. When this skill runs inside another workflow, return the result to that workflow instead.

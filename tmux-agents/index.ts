@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-wor
 import { Type } from "typebox";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { accessSync, constants, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { basename, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,16 @@ const RESERVED_ENDPOINT_NAMES = new Set(["parent"]);
 const FORMAT = "#{pid}\t#{session_id}\t#{window_id}\t#{pane_id}\t#{pane_pid}\t#{pane_dead}\t#{pane_in_mode}";
 const NOTE = "Pi context estimate, not cumulative billed tokens. Fresh sessions can undercount system/tool cost. Null means unknown, including after compaction.";
 const PROCESS_STARTED_AT = new Date().toISOString();
+const MENU_SCRIPT = join(dirname(SELF), "tmux-menu.sh");
+const MENU_KEY = "MouseDown3Status";
+const MENU_OPT_OUT = "PI_TMUX_AGENTS_MENU";
+const LAYOUT_SCRIPT = join(dirname(SELF), "layout.mjs");
+const LAYOUT_OPT_OUT = "PI_TMUX_AGENTS_LAYOUT";
+
+/** True when an opt-out environment variable is set to off, 0, false, no or disabled. */
+function optedOut(variable: string): boolean {
+  return ["off", "0", "false", "no", "disabled"].includes((process.env[variable] ?? "").trim().toLowerCase());
+}
 
 export function bounded(text: string, max = 12000): string {
   const marker = "\n[truncated; inspect the child TUI for more]";
@@ -105,7 +115,7 @@ export function getPiInvocation(args: string[]) {
 
 type SpawnArgs = { name: string; mode?: "window" | "pane"; cwd?: string; systemPrompt?: string; provider?: string; model?: string; thinking?: string; waitMs?: number };
 type Pane = { serverPid: number; session: string; window: string; id: string; pid: number; dead: boolean; inMode: boolean };
-type Record = Pane & { dir: string; token: string; socket: string; serverStart: string; start: string; name: string; mode: string; createdAt: string };
+type ChildRecord = Pane & { dir: string; token: string; socket: string; serverStart: string; start: string; name: string; mode: string; createdAt: string };
 type Snapshot = {
   token: string; id: string; pid: number; start: string; sessionId: string; sessionFile: string | null;
   updatedAt: string; event: string; idle: boolean; pending: boolean; waiting: boolean; editorEmpty: boolean; stopped: boolean;
@@ -146,6 +156,26 @@ function socketPath() {
   return socket;
 }
 
+/** This process's tmux pane ID, such as %12. */
+function currentPane() {
+  const pane = process.env.TMUX_PANE;
+  if (!pane || !/^%\d+$/.test(pane)) throw new Error("Run the parent Pi inside tmux");
+  return pane;
+}
+
+/** Checks the fields the pollers rely on. Records come from files any same-user process can write. */
+function isPeerMessage(value: unknown): value is PeerMessage {
+  const hasName = (endpoint: unknown) =>
+    typeof endpoint === "object" && endpoint !== null && "name" in endpoint && typeof endpoint.name === "string";
+  return typeof value === "object" && value !== null &&
+    "messageId" in value && typeof value.messageId === "string" &&
+    "createdAt" in value && typeof value.createdAt === "string" &&
+    "content" in value && typeof value.content === "string" &&
+    "mode" in value && (value.mode === "steering" || value.mode === "interrupt") &&
+    "from" in value && hasName(value.from) &&
+    "to" in value && hasName(value.to);
+}
+
 export function launchArgs(params: SpawnArgs, cwd: string) {
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$/.test(params.name)) throw new Error("Name must be 1-48 letters, digits, underscores or hyphens, starting with a letter or digit");
   if (RESERVED_ENDPOINT_NAMES.has(params.name)) throw new Error(`Name ${JSON.stringify(params.name)} is reserved`);
@@ -159,12 +189,42 @@ export function launchArgs(params: SpawnArgs, cwd: string) {
     args.push("--system-prompt", file);
   }
   for (const key of ["provider", "model", "thinking"] as const) {
-    if (params[key]) {
-      if (/[\x00-\x1f\x7f]/.test(params[key]!) || params[key]!.startsWith("-")) throw new Error(`Invalid ${key}`);
-      args.push(`--${key}`, params[key]!);
+    const value = params[key];
+    if (value) {
+      if (/[\x00-\x1f\x7f]/.test(value) || value.startsWith("-")) throw new Error(`Invalid ${key}`);
+      args.push(`--${key}`, value);
     }
   }
   return { cwd: dir, args };
+}
+
+/**
+ * True when the right-click binding on a window tab may be replaced with this extension's menu:
+ * nothing is bound, tmux's default window menu is bound, or an earlier standalone copy of the menu is.
+ * Any other binding is the user's own and is kept.
+ */
+export function replaceableMenuBinding(listing: string): boolean {
+  const binding = listing.trim();
+  if (!binding) return true;
+  const isDefaultMenu = /\bdisplay-menu\b/.test(binding) && binding.includes("Swap Left") && binding.includes("kill-window");
+  return isDefaultMenu || binding.includes("tmux-window-menu") || binding.includes("tmux-menu.sh");
+}
+
+export type MenuInstall = "installed" | "already-installed" | "kept-custom-binding" | "unsupported-path";
+
+/** Bind a right-click on a window tab in the status bar to tmux-menu.sh. The binding lasts for the tmux server's lifetime. */
+export async function installWindowMenu(exec: ExtensionAPI["exec"], socket: string, script = MENU_SCRIPT): Promise<MenuInstall> {
+  // The path is embedded in a tmux command string and a shell command, so it must need no quoting.
+  if (!/^[A-Za-z0-9_./-]+$/.test(script)) return "unsupported-path";
+  const command = `bash ${script} menu '#{client_name}' '#{pane_id}'`;
+  const current = await exec("tmux", ["-S", socket, "list-keys", "-T", "root", MENU_KEY], { timeout: 5000 });
+  const listing = current.code === 0 ? current.stdout : "";
+  if (listing.includes(command)) return "already-installed";
+  if (!replaceableMenuBinding(listing)) return "kept-custom-binding";
+  // -t = runs the command in the context of the clicked window, so #{pane_id} is its active pane.
+  const bind = await exec("tmux", ["-S", socket, "bind-key", "-n", MENU_KEY, "run-shell", "-b", "-t", "=", command], { timeout: 5000 });
+  if (bind.code !== 0) throw new Error(`tmux bind-key failed (exit ${bind.code})`);
+  return "installed";
 }
 
 export class TmuxAgents {
@@ -184,10 +244,10 @@ export class TmuxAgents {
     return parsePane(await this.tmux(socket, ["display-message", "-p", "-t", id, FORMAT], signal));
   }
 
-  records(): Record[] {
+  records(): ChildRecord[] {
     return readdirSync(this.root).filter(name => name.startsWith("child-")).flatMap(name => {
       try {
-        const record = jsonFile<Record>(join(this.root, name, "meta.json"));
+        const record = jsonFile<ChildRecord>(join(this.root, name, "meta.json"));
         return record ? [record] : [];
       } catch (error) {
         console.error(`tmux agents: skipping unreadable child record. ${bounded(String(error), 300)}`);
@@ -202,12 +262,14 @@ export class TmuxAgents {
     return record;
   }
 
-  async inspect(record: Record, signal?: AbortSignal) {
+  async inspect(record: ChildRecord, signal?: AbortSignal) {
     let live: Pane;
     try {
       if (processIdentity(record.serverPid).start !== record.serverStart) throw new Error("server changed");
       live = await this.pane(record.socket, record.id, signal);
-      if (live.dead || live.serverPid !== record.serverPid || live.session !== record.session || live.window !== record.window || live.pid !== record.pid || processIdentity(record.pid).start !== record.start) throw new Error("pane changed");
+      // Pane ID, PID and start time identify the agent. Session and window are not compared:
+      // join-pane, break-pane and move-pane keep a pane's ID while moving it between windows.
+      if (live.dead || live.serverPid !== record.serverPid || live.pid !== record.pid || processIdentity(record.pid).start !== record.start) throw new Error("pane changed");
     } catch {
       signal?.throwIfAborted();
       return { status: "unavailable" as const, snapshot: undefined, live: undefined };
@@ -224,7 +286,7 @@ export class TmuxAgents {
   async spawn(params: SpawnArgs, ctx: Pick<ExtensionContext, "cwd">, signal?: AbortSignal) {
     const launch = launchArgs(params, ctx.cwd); // Validate the file before any spawn.
     const socket = socketPath();
-    const parent = await this.pane(socket, process.env.TMUX_PANE!, signal);
+    const parent = await this.pane(socket, currentPane(), signal);
     const names = await this.tmux(socket, ["list-windows", "-t", parent.session, "-F", "#{window_name}"], signal);
     if (names.trim().split("\n").includes(params.name) || this.records().some(r => r.name === params.name)) throw new Error("Name already exists. Choose a unique window label");
     const dir = mkdtempSync(join(this.root, "child-"));
@@ -242,12 +304,16 @@ export class TmuxAgents {
     try {
       // Once creation starts, collect the ID even if the caller cancels. Never retry a spawn.
       pane = parsePane(await this.tmux(socket, command));
-      const record: Record = { ...pane, socket, dir, token, name: params.name, mode,
+      const record: ChildRecord = { ...pane, socket, dir, token, name: params.name, mode,
         serverStart: processIdentity(pane.serverPid).start, start: processIdentity(pane.pid).start, createdAt: new Date().toISOString() };
       atomicJSON(join(dir, "meta.json"), record);
       await this.tmux(socket, ["set-option", "-w", "-t", pane.window, "automatic-rename", "off"]);
       await this.tmux(socket, ["set-option", "-w", "-t", pane.window, "allow-rename", "off"]);
       await this.tmux(socket, ["rename-window", "-t", pane.window, params.name]);
+      if (!optedOut(LAYOUT_OPT_OUT)) {
+        // Layout is a convenience: a failure here must not fail the spawn.
+        await this.pi.exec("node", [LAYOUT_SCRIPT, "attach", parent.id, pane.id, params.name], { timeout: 10000 }).catch(() => undefined);
+      }
       const deadline = Date.now() + (params.waitMs ?? 10000);
       let state;
       do {
@@ -321,7 +387,8 @@ export class TmuxAgents {
     const agents = [];
     for (const record of records.slice(offset, offset + 50)) {
       const state = await this.inspect(record, signal);
-      agents.push({ id: record.id, name: record.name, window: record.window, mode: record.mode, status: state.status });
+      // The pane may have moved since spawn, so report its current window when it is known.
+      agents.push({ id: record.id, name: record.name, window: state.live?.window ?? record.window, mode: record.mode, status: state.status });
     }
     return { agents, nextOffset: offset + 50 < records.length ? offset + 50 : null };
   }
@@ -500,7 +567,17 @@ export class TmuxAgents {
   }
 }
 
+/**
+ * tmux-agents needs tmux and Linux's /proc, which it uses to check process identity. Elsewhere,
+ * including native Windows and macOS, or when Pi isn't running inside tmux, the extension stays
+ * inactive: it registers no tools, so it costs no context and raises no errors.
+ */
+export function supportedEnvironment(platform: string = process.platform, env: NodeJS.ProcessEnv = process.env): boolean {
+  return platform === "linux" && Boolean(env.TMUX) && Boolean(env.TMUX_PANE);
+}
+
 export default function (pi: ExtensionAPI) {
+  if (!supportedEnvironment()) return;
   // Children can also spawn children. Each process has its own parent directory.
   let manager: TmuxAgents | undefined;
   const agents = () => manager ??= new TmuxAgents(pi);
@@ -568,6 +645,29 @@ export default function (pi: ExtensionAPI) {
     parameters: Type.Object({ offset: Type.Optional(Type.Integer({ minimum: 0 })), peer: Type.Optional(Type.String()), maxChars: Type.Optional(Type.Integer({ minimum: 1000, maximum: 20000 })) }),
     async execute(_id, args, signal, _update, ctx) { return result(await agents().messages(args.offset, args.peer, args.maxChars, signal, ctx.sessionManager.getSessionId())); } });
 
+  // The parent installs the pane layout and the window menu once per process. Children inherit the tmux server's settings.
+  let menuChecked = false;
+  pi.on("session_start", async (_event, ctx) => {
+    if (menuChecked || process.env[CHILD_DIR] || !process.env.TMUX || ctx.mode !== "tui") return;
+    menuChecked = true;
+    if (!optedOut(LAYOUT_OPT_OUT)) {
+      // layout.mjs runs under node, not Pi's runtime, because the tmux hooks it registers re-run it from tmux.
+      const layout = await pi.exec("node", [LAYOUT_SCRIPT, "install", currentPane()], { timeout: 15000 }).catch(error => ({ code: 1, stderr: String(error) }));
+      if (layout.code !== 0) ctx.ui.notify(`tmux-agents: automatic pane layout is off. ${bounded(layout.stderr.trim() || "node layout.mjs install failed", 300)}`, "warning");
+    }
+    if (optedOut(MENU_OPT_OUT)) return;
+    try {
+      const outcome = await installWindowMenu(pi.exec.bind(pi), socketPath());
+      if (outcome === "kept-custom-binding") {
+        ctx.ui.notify(`tmux-agents: right-click window menu not installed, because ${MENU_KEY} already has a custom tmux binding.`, "info");
+      } else if (outcome === "unsupported-path") {
+        ctx.ui.notify("tmux-agents: right-click window menu not installed, because the extension's path contains characters that would need quoting.", "warning");
+      }
+    } catch (error) {
+      ctx.ui.notify(`tmux-agents: could not install the right-click window menu. ${bounded(String(error), 300)}`, "warning");
+    }
+  });
+
   let parentGeneration = 0;
   let parentTimer: NodeJS.Timeout | undefined;
   const stopParentWatcher = () => { parentGeneration++; if (parentTimer) clearTimeout(parentTimer); parentTimer = undefined; };
@@ -581,12 +681,6 @@ export default function (pi: ExtensionAPI) {
     const terminalMessages = new Set<string>();
     const writeTerminalReceipt = (receipt: PeerReceipt) => {
       if (!owner.receipt(receipt.messageId)) owner.writeReceipt(receipt);
-    };
-    const validMessage = (message: unknown): message is PeerMessage => {
-      const value = message as Partial<PeerMessage>;
-      return !!value && typeof value.messageId === "string" && typeof value.createdAt === "string" &&
-        typeof value.content === "string" && (value.mode === "steering" || value.mode === "interrupt") &&
-        !!value.from && typeof value.from.name === "string" && !!value.to && typeof value.to.name === "string";
     };
     const tick = () => {
       parentTimer = undefined;
@@ -609,7 +703,7 @@ export default function (pi: ExtensionAPI) {
             writeTerminalReceipt({ messageId, state: "invalid-record", error: bounded(String(error), 300) });
             continue;
           }
-          if (!validMessage(message) || message.to.name !== "parent") continue;
+          if (!isPeerMessage(message) || message.to.name !== "parent") continue;
           messages.push(message);
           if (owner.receipt(message.messageId)) continue;
           if (message.createdAt < PROCESS_STARTED_AT) {
@@ -664,15 +758,9 @@ export default function (pi: ExtensionAPI) {
     for (const timer of refreshTimers) clearTimeout(timer);
     refreshTimers.clear();
   };
-  const validPeerMessage = (message: unknown): message is PeerMessage => {
-    const value = message as Partial<PeerMessage>;
-    return !!value && typeof value.messageId === "string" && typeof value.createdAt === "string" && typeof value.content === "string" &&
-      (value.mode === "steering" || value.mode === "interrupt") && !!value.from && typeof value.from.name === "string" &&
-      !!value.to && typeof value.to.name === "string";
-  };
   const snapshot = (ctx: ExtensionContext, event: string, stopped = false) => {
     if (!owned) return;
-    const data: Snapshot = { token, id: process.env.TMUX_PANE!, pid: process.pid, start: processIdentity(process.pid).start,
+    const data: Snapshot = { token, id: currentPane(), pid: process.pid, start: processIdentity(process.pid).start,
       sessionId: ctx.sessionManager.getSessionId(), sessionFile: ctx.sessionManager.getSessionFile() ?? null,
       updatedAt: new Date().toISOString(), event, stopped, idle: ctx.isIdle(), pending: ctx.hasPendingMessages(), waiting,
       editorEmpty: ctx.ui.getEditorText().length === 0, context: contextSummary(ctx), thinking: ctx.thinkingLevel ?? null,
@@ -718,7 +806,7 @@ export default function (pi: ExtensionAPI) {
     const guarded = (message: unknown): GuardResult => {
       if (!owned || current !== generation || ctx.sessionManager.getSessionId() !== sessionId) return { ok: false, reason: "lifecycle" };
       if (waiting) return { ok: false, reason: "waiting" };
-      if (!validPeerMessage(message)) return { ok: false, reason: "invalid" };
+      if (!isPeerMessage(message)) return { ok: false, reason: "invalid" };
       if (message.to.name !== familyName) return { ok: false, reason: "not-mine" };
       if (message.createdAt < PROCESS_STARTED_AT) return { ok: false, reason: "stale" };
       if (manager.receipt(message.messageId)) return { ok: false, reason: "receipted" };
@@ -793,7 +881,7 @@ export default function (pi: ExtensionAPI) {
           if (handledMessages.has(messageId) || manager.receipt(messageId)) continue;
           try {
             const message: unknown = manager.readMessage(filename);
-            if (!validPeerMessage(message)) {
+            if (!isPeerMessage(message)) {
               manager.writeReceipt({ messageId, state: "invalid-record", error: "Message record has an invalid schema" });
               continue;
             }
@@ -835,7 +923,7 @@ export default function (pi: ExtensionAPI) {
     const current = generation;
     if (ctx.mode !== "tui") return;
     privateDirectory(childDir);
-    const check = await pi.exec("tmux", ["-S", socketPath(), "display-message", "-p", "-t", process.env.TMUX_PANE!, "#{pane_pid}"], { timeout: 5000 });
+    const check = await pi.exec("tmux", ["-S", socketPath(), "display-message", "-p", "-t", currentPane(), "#{pane_pid}"], { timeout: 5000 });
     if (current !== generation) return;
     // A nested Pi that merely inherits our env must not publish as its parent.
     owned = check.code === 0 && Number(check.stdout.trim()) === process.pid;

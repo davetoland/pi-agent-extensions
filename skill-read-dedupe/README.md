@@ -24,17 +24,14 @@ PI_SKILL_READ_DEDUPE=off pi    # also accepts 0, false, no, disabled
 
 The variable is checked on every call.
 
-## Enable
+## Install
 
-The extension is not loaded from this directory. To load it:
+Install it with the rest of this repository's package (see the [main README](../README.md)). To install only this extension, copy this directory to `~/.pi/agent/extensions/skill-read-dedupe/`, then `/reload` or restart Pi.
+
+To try it for one run without installing:
 
 ```bash
-# One run only
-pi -e /root/.pi/agent/extensions-disabled/skill-read-dedupe/index.ts
-
-# Permanently
-cp -r /root/.pi/agent/extensions-disabled/skill-read-dedupe /root/.pi/agent/extensions/
-# then /reload or restart pi
+pi -e ./skill-read-dedupe/index.ts
 ```
 
 ## Known gaps and risks

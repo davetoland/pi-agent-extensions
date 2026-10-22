@@ -67,7 +67,7 @@ Questions:
 - Are any instructions duplicated across files, or contradicted by other instructions?
 - Are any instructions loaded in every session but never relevant? This is context cost with no return.
 - Are any instructions stale, referring to paths, commands, or tools that no longer exist or have changed form?
-- Did the agent ask the user questions that `PROJECT_PROFILE.md` or project documents should have answered?
+- Did the agent ask the user questions that the project's instructions or documents should have answered?
 
 Signals: manifest `context.instructions` (sizes and `contentHash`), instruction-hash cohorts, `instruction_load` events, `user_correction`, assistant text expressing uncertainty or asking questions, `discovery`.
 

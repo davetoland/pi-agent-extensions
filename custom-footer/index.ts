@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync, statSync, unwatchFile, watchFile } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -10,6 +10,10 @@ import { dirname, join, resolve } from "node:path";
  * never changes. Poll HEAD's stat as well; this works on those mounts.
  */
 const HEAD_POLL_INTERVAL_MS = 2_000;
+
+/** Context usage, as a percentage of the window, at which the readout turns amber and then red. */
+const CONTEXT_WARNING_PERCENT = 40;
+const CONTEXT_ERROR_PERCENT = 60;
 
 function findGitHeadPath(cwd: string): string | null {
   let dir = resolve(cwd);
@@ -106,19 +110,30 @@ interface UsageTotals {
   cost: number;
 }
 
-function addUsage(totals: UsageTotals, usage: any): void {
+/** Pi's usage record, as carried by `usage` session entries. */
+type Usage = Extract<SessionEntry, { type: "usage" }>["usage"];
+
+function addUsage(totals: UsageTotals, usage: Usage | undefined): void {
   if (!usage) {
     return;
   }
 
-  totals.input += usage.input ?? 0;
-  totals.output += usage.output ?? 0;
-  totals.cacheRead += usage.cacheRead ?? 0;
-  totals.cacheWrite += usage.cacheWrite ?? 0;
-  totals.cost += usage.cost?.total ?? 0;
+  totals.input += usage.input;
+  totals.output += usage.output;
+  totals.cacheRead += usage.cacheRead;
+  totals.cacheWrite += usage.cacheWrite;
+  totals.cost += usage.cost.total;
 }
 
 export default function footer(pi: ExtensionAPI) {
+  const autoCompactEnabled = (): boolean => {
+    try {
+      return pi.getSettings().compaction?.enabled ?? true;
+    } catch {
+      return true;
+    }
+  };
+
   pi.on("session_start", async (_event, ctx) => {
     if (!ctx.hasUI || ctx.mode !== "tui") {
       return;
@@ -179,7 +194,11 @@ export default function footer(pi: ExtensionAPI) {
           let latestCacheHitRate: number | undefined;
 
           for (const entry of ctx.sessionManager.getEntries()) {
-            if (
+            if (entry.type === "usage") {
+              // Model-attributed usage outside the conversation, such as
+              // cache warming. Pi's own footer counts it too.
+              addUsage(usageTotals, entry.usage);
+            } else if (
               entry.type === "message" &&
               entry.message.role === "assistant"
             ) {
@@ -188,13 +207,11 @@ export default function footer(pi: ExtensionAPI) {
               addUsage(usageTotals, usage);
 
               const latestPromptTokens =
-                (usage?.input ?? 0) +
-                (usage?.cacheRead ?? 0) +
-                (usage?.cacheWrite ?? 0);
+                usage.input + usage.cacheRead + usage.cacheWrite;
 
               latestCacheHitRate =
                 latestPromptTokens > 0
-                  ? ((usage?.cacheRead ?? 0) / latestPromptTokens) * 100
+                  ? (usage.cacheRead / latestPromptTokens) * 100
                   : undefined;
             } else if (
               entry.type === "message" &&
@@ -289,6 +306,9 @@ export default function footer(pi: ExtensionAPI) {
           const contextTokens = context?.tokens;
           const contextPercent = context?.percent;
 
+          // Like Pi's footer, show "(auto)" only while auto-compaction is on.
+          const autoIndicator = autoCompactEnabled() ? " (auto)" : "";
+
           let contextDisplay: string;
 
           if (
@@ -298,22 +318,22 @@ export default function footer(pi: ExtensionAPI) {
             contextPercent === undefined
           ) {
             contextDisplay =
-              `?/${formatTokens(contextWindow)} (?) (auto)`;
+              `?/${formatTokens(contextWindow)} (?)${autoIndicator}`;
           } else {
             contextDisplay =
               `${formatTokens(contextTokens)}/` +
               `${formatTokens(contextWindow)} ` +
-              `(${contextPercent.toFixed(1)}%) ` +
-              `(auto)`;
+              `(${contextPercent.toFixed(1)}%)` +
+              autoIndicator;
           }
 
           /*
-           * Keep Pi's normal warning colours.
+           * Warn earlier than Pi does (70% and 90%), using Pi's colours.
            */
           if (
             contextPercent !== null &&
             contextPercent !== undefined &&
-            contextPercent > 90
+            contextPercent >= CONTEXT_ERROR_PERCENT
           ) {
             contextDisplay = theme.fg(
               "error",
@@ -322,7 +342,7 @@ export default function footer(pi: ExtensionAPI) {
           } else if (
             contextPercent !== null &&
             contextPercent !== undefined &&
-            contextPercent > 70
+            contextPercent >= CONTEXT_WARNING_PERCENT
           ) {
             contextDisplay = theme.fg(
               "warning",
@@ -455,8 +475,7 @@ export default function footer(pi: ExtensionAPI) {
           /*
            * Preserve status lines from any other extensions.
            */
-          const extensionStatuses =
-          footerData.getExtensionStatuses() as ReadonlyMap<string, string>;
+          const extensionStatuses = footerData.getExtensionStatuses();
 
           if (extensionStatuses.size > 0) {
             const statuses = Array.from(extensionStatuses.entries())
