@@ -4,13 +4,15 @@ A collection of custom extensions for the [Pi coding agent](https://pi.dev): foc
 
 Everything ships as a single Pi package. Install the lot, or pick just the extensions you want.
 
+📣 **[Extending Pi](series/README.md)** is a short series about these extensions: what each one adds and why, plus getting started with Pi and writing your own.
+
 ---
 
 ## Extensions at a glance
 
 | Extension | What it does |
 | --- | --- |
-| [`custom-footer`](#custom-footer) | A reworked session footer with clearer context, cache and cost stats |
+| [`custom-footer`](#custom-footer) | Pi's footer with context shown in tokens, earlier warnings, and branch display that works in containers |
 | [`conditional-instructions`](#conditional-instructions) | Load instructions only when the agent touches matching files |
 | [`skill-read-dedupe`](#skill-read-dedupe) | Stop the agent re-reading a skill that's already in context |
 | [`tmux-agents`](#tmux-agents) | Spawn, drive and coordinate other Pi agents in tmux windows |
@@ -75,24 +77,20 @@ For `session-eval`, also copy its skill: `cp -r pi-agent-extensions/session-eval
 
 ## custom-footer
 
-**Pi's footer, reworked to show what matters.**
+**Pi's footer, with a few tweaks.**
 
-A replacement for the footer at the bottom of every Pi session in the terminal. It keeps the look and warning colours of Pi's native footer, and changes what it shows and how reliably it shows it.
+A small replacement for the footer at the bottom of every Pi session in the terminal. It shows the same information as Pi's own footer, in the same style, with three changes:
 
 ```text
-/workspace (main) • my-session
-↑394k ↓24k R4.4M CH93.9% $3.802 (sub) 244k/1.1M (23.2%) (auto)      claude-opus-5-5 • high
+Pi's own:       ↑394k ↓24k R4.4M CH93.9% $3.802 (sub) 23.2%/1.1M (auto)
+custom-footer:  ↑394k ↓24k R4.4M CH93.9% $3.802 (sub) 244k/1.1M (23.2%) (auto)
 ```
 
-**Highlights**
-- **Clear context usage.** Tokens used against the context window, with a percentage that turns amber at 40% and red at 60%, earlier than Pi's own footer (70% and 90%).
-- **Cumulative usage.** Input, output, cache read and cache write totals across the whole session, including tool results, compactions, branch summaries and cache warming.
-- **Cache hit rate.** The share of the latest prompt served from cache.
-- **Cost, with subscription awareness.** Shows `(sub)` when you're on a subscription rather than paying per token.
-- **Reliable branch display.** Pi detects branch changes by watching `.git`, which misses changes on some bind mounts (for example 9p from a Windows host into a container). This footer also polls `HEAD`, and handles worktrees and submodules.
-- **Plays well with others.** Status lines from other extensions are kept on their own line.
+- **Tokens used, not just a percentage.** Context shows as tokens used against the window, with the percentage after it.
+- **Earlier warning.** The context reading turns amber at 40% and red at 60%, instead of Pi's 70% and 90%. The thresholds are two constants at the top of the file.
+- **Branch display that works in containers.** Pi notices branch changes by watching `.git`, which misses changes on some bind mounts, such as a Windows folder mounted into a Docker container. This footer also polls `HEAD`, and handles worktrees and submodules.
 
-Want different stats? The footer is built in one `render()` function, so it's easy to fork and make your own.
+It's one file with one event handler, which makes it a good starting point for your own footer. One difference from Pi's own footer: it can't show which model a routed request went to, because extensions can't see that.
 
 ---
 

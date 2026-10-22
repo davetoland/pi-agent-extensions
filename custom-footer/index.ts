@@ -1,7 +1,8 @@
 import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync, statSync, unwatchFile, watchFile } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join, resolve, sep } from "node:path";
 
 /*
  * Pi's footer detects branch changes with fs.watch on the .git directory.
@@ -73,6 +74,15 @@ function readBranchFromHead(headPath: string): string | undefined {
   }
 
   return undefined;
+}
+
+/** Show the home directory as ~, as Pi's footer does. */
+function homeRelative(path: string): string {
+  const home = homedir();
+  if (path === home) {
+    return "~";
+  }
+  return path.startsWith(home + sep) ? `~${path.slice(home.length)}` : path;
 }
 
 function formatTokens(count: number): string {
@@ -233,7 +243,7 @@ export default function footer(pi: ExtensionAPI) {
            *
            * /workspace (main) • pi-test
            */
-          let pwd = ctx.cwd;
+          let pwd = homeRelative(ctx.cwd);
 
           const branch = polledBranch ?? footerData.getGitBranch();
 
@@ -281,9 +291,13 @@ export default function footer(pi: ExtensionAPI) {
             );
           }
 
+          // As in Pi's footer: an OAuth login counts as a subscription only when the
+          // provider says so (OpenRouter's OAuth login bills per token). Kimi Coding is
+          // subscription-backed despite using API-key authentication.
           const usingSubscription = ctx.model
             ? ctx.model.provider === "kimi-coding" ||
-              ctx.modelRegistry.isUsingOAuth(ctx.model)
+              (ctx.modelRegistry.isUsingOAuth(ctx.model) &&
+                ctx.modelRegistry.getProvider(ctx.model.provider)?.auth.oauth?.isSubscription === true)
             : false;
 
           if (usageTotals.cost || usingSubscription) {
