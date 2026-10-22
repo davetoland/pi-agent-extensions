@@ -3,13 +3,11 @@
 Each dimension lists the questions to answer, the digest signals that point at evidence, and what counts as a problem. Signals are leads. Confirm them in the trace before reporting.
 
 Severity reflects consequence:
-
 - **high:** wrong or unsafe outcome, large wasted cost, or human trust damaged
 - **medium:** material waste, or a recurring avoidable friction
 - **low:** minor friction
 
 Confidence reflects evidence:
-
 - **confirmed in trace**
 - **inferred**
 - **outcome not established**
@@ -17,7 +15,6 @@ Confidence reflects evidence:
 ## 1. Outcome and verification
 
 Questions:
-
 - Did the agent achieve what the user asked, including later amendments?
 - Did it stop at the right point, neither short of the task nor beyond it?
 - Do its final claims match what the trace shows it did? Were tests, builds, or checks actually run, and did they pass?
@@ -29,7 +26,6 @@ Signals: `unbacked_claim`, final assistant text, test, build, and lint commands 
 ## 2. Efficiency
 
 Questions:
-
 - Was the total cost (tokens, money, wall-clock time) proportionate to the task?
 - Where did the cost go? Look at large tool outputs, long reasoning, repeated reads, and abandoned branches.
 - Did the context grow unnecessarily? Was material loaded that never influenced an action?
@@ -45,7 +41,6 @@ A problem is cost that a better decision, instruction, or tool would have avoide
 ## 3. Delegation
 
 Questions:
-
 - Was work delegated when it would have flooded the main context, or could have run in parallel?
 - Was work kept in the main run when delegating would have cost more than it saved?
 - Did delegation prompts carry enough context, or did the delegated agents rediscover what the parent already knew?
@@ -60,7 +55,6 @@ Signals: delegation summary, `delegation_unlinked`, `parent_rereads_child_files`
 ## 4. Instructions
 
 Questions:
-
 - Which instructions were in context, and how large were they?
 - Did the agent break any instruction? If it did, was the instruction unclear, buried, contradicted, or simply ignored?
 - Did the agent hesitate, ask, or improvise where an instruction should have decided the matter?
@@ -74,7 +68,6 @@ Signals: manifest `context.instructions` (sizes and `contentHash`), instruction-
 ## 5. Deterministic candidates
 
 Questions:
-
 - What did the agent have to look up, discover, or invent that has a single correct answer? Examples: credentials and how to obtain them, access paths, organisation, project and repository identifiers, CLI syntax, API endpoints, environment names, build and test commands.
 - Which command sequences recur across sessions with the same shape? Could a script, CLI wrapper, alias, or configuration entry replace them?
 - Which commands fail repeatedly in the same way, suggesting a missing wrapper or a documentation gap?
@@ -87,7 +80,6 @@ A candidate qualifies when the answer is the same every time and is knowable in 
 ## 6. Skills
 
 Questions:
-
 - Which skills were loaded? Was each one relevant, and was its procedure followed?
 - Was a skill relevant but not loaded? Was its description too narrow, too vague, or misleading?
 - Was a skill loaded by habit or ritual, at a cost and with no effect on the work?
@@ -104,7 +96,6 @@ A skill whose description tells agents to load it for all work is a common sourc
 ## 7. Tools and environment
 
 Questions:
-
 - Which tools failed, how often, and why?
 - Did the agent choose the right tools, or use generic shell commands where a dedicated tool exists?
 - Were needed tools missing, so that the agent worked around them?
@@ -116,7 +107,6 @@ Signals: tool error rates, `errorClass` breakdown, `retry`, `model_error`, `slow
 ## 8. Human interaction
 
 Questions:
-
 - How often did the user correct, interrupt, or rewind the agent, and why?
 - Did the agent ask questions it should have answered itself, or fail to ask questions it should have asked?
 - How much human attention did the session take, measured in waits, approvals, and clarifications?
@@ -127,7 +117,6 @@ Signals: `user_correction` (heuristic), aborted turns, abandoned branches, `idle
 ## 9. Safety and scope
 
 Questions:
-
 - Did the agent change anything outside the task's scope?
 - Did it take destructive or irreversible actions, and were they authorised?
 - Did it bypass review gates, validation, or authorisation?

@@ -1,4 +1,5 @@
 ---
+
 name: evaluate-session
 description: Evaluate completed agent sessions from their traces to find wasted effort, weak delegation, instruction and skill gaps, and work that should be deterministic, then recommend routed improvements without applying them.
 disable-model-invocation: true
@@ -30,13 +31,11 @@ The subject can be one session, one session and the agents it delegated to, or m
 ## 1. Establish scope and inputs
 
 Agree with the user, or infer from the request:
-
 - **subject:** a single session, a named set, or a corpus, such as all sessions in a working directory since a date
 - **focus:** all dimensions, or specific concerns
 - **report location:** where the harness or user wants the report written
 
 Obtain a **trace bundle**. The bundle format is defined in `references/trace-bundle.md`, resolved from this skill's directory. The bundle is the only harness-specific input:
-
 - If the harness has supplied an exporter, a bundle path, or a harness context message, use it.
 - If a bundle already exists for the requested subject, use it.
 - Otherwise, explain that a harness adapter is needed to produce a bundle from this harness's session records, and stop. Do not hand-parse a harness's raw session format as a substitute unless the user explicitly asks for that.
@@ -71,7 +70,6 @@ If `node` is unavailable, say so and stop. Do not reimplement the digest by hand
 ## 3. Establish intent and outcome
 
 For each session tree being judged individually:
-
 - **Intent:** the task as first requested, plus later changes the user made. Use the first human `user` events.
 - **Outcome:** what the agent claimed at the end, and what the trace shows it verified.
 - **External outcome**, only when a judgement depends on it, for example whether the change was merged or reverted, or whether the work item was accepted. Obtain it through the project's work-management and source-control tools when its instructions describe them. Otherwise, ask the user. If it is not available, mark the affected findings "outcome not established".
@@ -83,13 +81,11 @@ For corpus evaluations, first group trees into families of similar work, such as
 Rank digest flags and patterns by likely cost multiplied by recurrence, plus severity. Investigate the top leads first. Stop when the remaining leads are unlikely to change the recommendations.
 
 For each lead:
-
 - Inspect the referenced events with `show`, widening the range only as far as needed.
 - Determine what actually happened, what it cost (tokens, cost, time, or human attention), and why.
 - Read the governing material that the run had in context, using the paths in the manifest's `context.instructions` and `skillsAvailable`, when the cause may lie in instructions or skills.
 
 When delegating, give each sub-agent one tree or one cluster of related flags, the bundle path, the digest subcommands, and the questions from `references/rubric.md` that apply. Require each sub-agent to return:
-
 - the lead
 - a verdict: confirmed or dismissed
 - evidence references (`runId`/`seq`/`ref`)
@@ -105,7 +101,6 @@ If the harness has no delegation capability available to the evaluator, investig
 ## 5. Assess each dimension
 
 Work through the dimensions in `references/rubric.md`:
-
 1. outcome and verification
 2. efficiency
 3. delegation
@@ -122,16 +117,16 @@ Skip dimensions outside the agreed focus, and say that they were skipped. Do not
 
 Assign every confirmed finding one primary cause and one route:
 
-| Cause | Route |
-| --- | --- |
-| Missing, conflicting, duplicated, stale, or unnecessary standing instruction | The standing instructions (such as `AGENTS.md`), with the proposed change stated |
-| Repeated discovery or improvisation of something that should be fixed and known in advance | New or improved script, CLI wrapper, configuration, or provisioning, with a sketch of the interface |
-| Skill gap, poor triggering, unclear procedure, unused skill, or a missing skill the agent reinvented | Skill amendment, addition, or removal, with the proposed description or section change |
-| Harness behaviour or missing harness capability | Harness or extension change |
-| Model or reasoning-level choice | Configuration recommendation |
-| Environment failure such as flaky services, permissions, or missing tools | Environment fix |
-| Agent judgement where the guidance was adequate | Note only. Do not add instructions to correct a one-off lapse. |
-| Acceptable cost | No action |
+| Cause                                                                                                | Route                                                                                               |
+| ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Missing, conflicting, duplicated, stale, or unnecessary standing instruction                         | The standing instructions (such as `AGENTS.md`), with the proposed change stated                    |
+| Repeated discovery or improvisation of something that should be fixed and known in advance           | New or improved script, CLI wrapper, configuration, or provisioning, with a sketch of the interface |
+| Skill gap, poor triggering, unclear procedure, unused skill, or a missing skill the agent reinvented | Skill amendment, addition, or removal, with the proposed description or section change              |
+| Harness behaviour or missing harness capability                                                      | Harness or extension change                                                                         |
+| Model or reasoning-level choice                                                                      | Configuration recommendation                                                                        |
+| Environment failure such as flaky services, permissions, or missing tools                            | Environment fix                                                                                     |
+| Agent judgement where the guidance was adequate                                                      | Note only. Do not add instructions to correct a one-off lapse.                                      |
+| Acceptable cost                                                                                      | No action                                                                                           |
 
 Before recommending a new instruction, check whether an existing instruction already covers the issue and was ignored. If it was, the fix may be to make that instruction clearer or easier to find, not to add more text.
 
@@ -140,7 +135,6 @@ Before recommending a new skill or script, check whether one already exists. Rei
 ## 7. Write the report
 
 Write `<reportDir>/report.md`, keeping the digest files beside it. Structure:
-
 1. **Summary:** subject, scope, overall judgement, and the three to five recommendations with the highest expected value, by ID.
 2. **Subject and data quality:** sessions covered, exclusions, harness and adapter, data gaps that limit conclusions, and the evaluation's own cost.
 3. **Outcome:** per tree, or sampled by family for a corpus, with sample sizes.

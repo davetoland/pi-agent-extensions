@@ -22,7 +22,6 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-
 const SKILL_FILE = "SKILL.md";
 const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
 
@@ -36,54 +35,53 @@ const SKILL_PREAMBLE = /^References are relative to [^\n]*\.$/;
 type ContextMessage = ContextWithSystemEvent["messages"][number];
 
 interface Match {
-  source: "read" | "skill";
-  skillName?: string;
+	source: "read" | "skill";
+	skillName?: string;
 }
-
 
 function isDisabled(): boolean {
-  const value = (process.env.PI_SKILL_READ_DEDUPE ?? "").trim().toLowerCase();
-  return ["off", "0", "false", "no", "disabled"].includes(value);
+	const value = (process.env.PI_SKILL_READ_DEDUPE ?? "").trim().toLowerCase();
+	return ["off", "0", "false", "no", "disabled"].includes(value);
 }
-
 
 /** Resolve a read-tool path the way Pi does, then canonicalise via realpath. Throws if unresolvable. */
 function canonicalPath(rawPath: string, cwd: string): string {
-  let p = rawPath.replace(UNICODE_SPACES, " ");
+	let p = rawPath.replace(UNICODE_SPACES, " ");
 
-  if (p.startsWith("@")) {
-    p = p.slice(1);
-  }
+	if (p.startsWith("@")) {
+		p = p.slice(1);
+	}
 
-  if (p === "~") {
-    p = homedir();
-  } else if (p.startsWith("~/")) {
-    p = join(homedir(), p.slice(2));
-  } else if (/^file:\/\//.test(p)) {
-    p = fileURLToPath(p);
-  }
+	if (p === "~") {
+		p = homedir();
+	} else if (p.startsWith("~/")) {
+		p = join(homedir(), p.slice(2));
+	} else if (/^file:\/\//.test(p)) {
+		p = fileURLToPath(p);
+	}
 
-  return realpathSync(isAbsolute(p) ? p : resolve(cwd, p));
+	return realpathSync(isAbsolute(p) ? p : resolve(cwd, p));
 }
-
 
 /** Same body that Pi injects for /skill:name (frontmatter stripped, trimmed). */
 function skillBody(content: string): string {
-  const normalized = content.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+	const normalized = content
+		.replace(/^\uFEFF/, "")
+		.replace(/\r\n/g, "\n")
+		.replace(/\r/g, "\n");
 
-  if (!normalized.startsWith("---")) {
-    return normalized.trim();
-  }
+	if (!normalized.startsWith("---")) {
+		return normalized.trim();
+	}
 
-  const end = normalized.indexOf("\n---", 3);
+	const end = normalized.indexOf("\n---", 3);
 
-  if (end === -1) {
-    return normalized.trim();
-  }
+	if (end === -1) {
+		return normalized.trim();
+	}
 
-  return normalized.slice(end + 4).trim();
+	return normalized.slice(end + 4).trim();
 }
-
 
 /**
  * True when the read arguments select the whole of `text`. Mirrors Pi's read
@@ -93,209 +91,222 @@ function skillBody(content: string): string {
  * The 2000-line/50KB truncation is not considered here.
  */
 function isFullReadArgs(args: unknown, text: string): args is { path: string } {
-  if (!args || typeof args !== "object") {
-    return false;
-  }
+	if (!args || typeof args !== "object") {
+		return false;
+	}
 
-  const a = args as Record<string, unknown>;
+	const a = args as Record<string, unknown>;
 
-  if (typeof a.path !== "string") {
-    return false;
-  }
+	if (typeof a.path !== "string") {
+		return false;
+	}
 
-  const lineCount = text.split("\n").length;
+	const lineCount = text.split("\n").length;
 
-  // Any argument other than `path`, `offset` and `limit` means a possibly
-  // partial read.
-  return Object.entries(a).every(([key, value]) => {
-    if (key === "path" || value === undefined || value === null) {
-      return true;
-    }
+	// Any argument other than `path`, `offset` and `limit` means a possibly
+	// partial read.
+	return Object.entries(a).every(([key, value]) => {
+		if (key === "path" || value === undefined || value === null) {
+			return true;
+		}
 
-    if (key === "offset") {
-      return typeof value === "number" && value <= 1;
-    }
+		if (key === "offset") {
+			return typeof value === "number" && value <= 1;
+		}
 
-    if (key === "limit") {
-      return typeof value === "number" && value >= lineCount;
-    }
+		if (key === "limit") {
+			return typeof value === "number" && value >= lineCount;
+		}
 
-    return false;
-  });
+		return false;
+	});
 }
-
 
 function sameCanonical(rawPath: string, cwd: string, target: string): boolean {
-  try {
-    return canonicalPath(rawPath, cwd) === target;
-  } catch {
-    return false;
-  }
+	try {
+		return canonicalPath(rawPath, cwd) === target;
+	} catch {
+		return false;
+	}
 }
-
 
 /** True when a read result's details say the output was truncated, or can't be read as saying it wasn't. */
 function isTruncated(details: unknown): boolean {
-  if (typeof details !== "object" || details === null || !("truncation" in details) || details.truncation === undefined) {
-    return false;
-  }
+	if (
+		typeof details !== "object" ||
+		details === null ||
+		!("truncation" in details) ||
+		details.truncation === undefined
+	) {
+		return false;
+	}
 
-  const truncation = details.truncation;
+	const truncation = details.truncation;
 
-  return !(typeof truncation === "object" && truncation !== null && "truncated" in truncation && truncation.truncated === false);
+	return !(
+		typeof truncation === "object" &&
+		truncation !== null &&
+		"truncated" in truncation &&
+		truncation.truncated === false
+	);
 }
 
+function findInContext(
+	messages: readonly ContextMessage[],
+	target: string,
+	current: string,
+	cwd: string,
+): Match | undefined {
+	// toolCallId -> arguments, for read calls in assistant messages.
+	const readCalls = new Map<string, unknown>();
 
-function findInContext(messages: readonly ContextMessage[], target: string, current: string, cwd: string): Match | undefined {
-  // toolCallId -> arguments, for read calls in assistant messages.
-  const readCalls = new Map<string, unknown>();
+	for (const message of messages) {
+		if (message.role !== "assistant") {
+			continue;
+		}
 
-  for (const message of messages) {
-    if (message.role !== "assistant") {
-      continue;
-    }
+		for (const block of message.content) {
+			if (block.type === "toolCall" && block.name === "read") {
+				readCalls.set(block.id, block.arguments);
+			}
+		}
+	}
 
-    for (const block of message.content) {
-      if (block.type === "toolCall" && block.name === "read") {
-        readCalls.set(block.id, block.arguments);
-      }
-    }
-  }
+	let body: string | undefined;
 
-  let body: string | undefined;
+	for (const message of messages) {
+		if (message.role === "toolResult") {
+			if (message.toolName !== "read" || message.isError !== false) {
+				continue;
+			}
 
-  for (const message of messages) {
-    if (message.role === "toolResult") {
-      if (message.toolName !== "read" || message.isError !== false) {
-        continue;
-      }
+			const args = readCalls.get(message.toolCallId);
 
-      const args = readCalls.get(message.toolCallId);
+			if (!isFullReadArgs(args, current) || !sameCanonical(args.path, cwd, target)) {
+				continue;
+			}
 
-      if (!isFullReadArgs(args, current) || !sameCanonical(args.path, cwd, target)) {
-        continue;
-      }
+			// The read tool sets details.truncation only when it truncated output.
+			if (isTruncated(message.details)) {
+				continue;
+			}
 
-      // The read tool sets details.truncation only when it truncated output.
-      if (isTruncated(message.details)) {
-        continue;
-      }
+			const [only, ...rest] = message.content;
 
-      const [only, ...rest] = message.content;
+			if (only?.type !== "text" || rest.length > 0) {
+				continue;
+			}
 
-      if (only?.type !== "text" || rest.length > 0) {
-        continue;
-      }
+			// Exact equality with the file's current text proves both completeness
+			// (no truncation/continuation notice) and currency (no edits since).
+			if (only.text === current) {
+				return { source: "read" };
+			}
 
-      // Exact equality with the file's current text proves both completeness
-      // (no truncation/continuation notice) and currency (no edits since).
-      if (only.text === current) {
-        return { source: "read" };
-      }
+			continue;
+		}
 
-      continue;
-    }
+		if (message.role === "user") {
+			const parts =
+				typeof message.content === "string"
+					? [message.content]
+					: message.content.flatMap((part) => (part.type === "text" ? [part.text] : []));
 
-    if (message.role === "user") {
-      const parts = typeof message.content === "string"
-        ? [message.content]
-        : message.content.flatMap(part => part.type === "text" ? [part.text] : []);
+			for (const text of parts) {
+				const match = text.match(SKILL_BLOCK);
 
-      for (const text of parts) {
-        const match = text.match(SKILL_BLOCK);
+				if (!match || !sameCanonical(match[2], cwd, target)) {
+					continue;
+				}
 
-        if (!match || !sameCanonical(match[2], cwd, target)) {
-          continue;
-        }
+				body ??= skillBody(current);
 
-        body ??= skillBody(current);
+				const injected = match[3];
+				const split = injected.indexOf("\n\n");
 
-        const injected = match[3];
-        const split = injected.indexOf("\n\n");
+				if (split !== -1 && SKILL_PREAMBLE.test(injected.slice(0, split)) && injected.slice(split + 2) === body) {
+					return { source: "skill", skillName: match[1] };
+				}
+			}
+		}
+	}
 
-        if (split !== -1 && SKILL_PREAMBLE.test(injected.slice(0, split)) && injected.slice(split + 2) === body) {
-          return { source: "skill", skillName: match[1] };
-        }
-      }
-    }
-  }
-
-  return undefined;
+	return undefined;
 }
-
 
 export default function (pi: ExtensionAPI) {
-  let lastContext: readonly ContextMessage[] | undefined;
+	let lastContext: readonly ContextMessage[] | undefined;
 
-  const reset = () => {
-    lastContext = undefined;
-  };
+	const reset = () => {
+		lastContext = undefined;
+	};
 
-  // Observe only: return nothing so the request is unchanged.
-  pi.on("context_with_system", async (event) => {
-    try {
-      lastContext = Array.isArray(event.messages) ? event.messages : undefined;
-    } catch {
-      lastContext = undefined;
-    }
+	// Observe only: return nothing so the request is unchanged.
+	pi.on("context_with_system", async (event) => {
+		try {
+			lastContext = Array.isArray(event.messages) ? event.messages : undefined;
+		} catch {
+			lastContext = undefined;
+		}
 
-    return undefined;
-  });
+		return undefined;
+	});
 
-  // Until the next model request, the cached list may not match what the model
-  // will see. Dropping it only makes us fail open.
-  pi.on("session_start", async () => reset());
-  pi.on("session_compact", async () => reset());
-  pi.on("session_tree", async () => reset());
-  pi.on("session_shutdown", async () => reset());
+	// Until the next model request, the cached list may not match what the model
+	// will see. Dropping it only makes us fail open.
+	pi.on("session_start", async () => reset());
+	pi.on("session_compact", async () => reset());
+	pi.on("session_tree", async () => reset());
+	pi.on("session_shutdown", async () => reset());
 
-  pi.on("tool_call", async (event, ctx) => {
-    try {
-      if (isDisabled() || !isToolCallEventType("read", event) || event.parentToolCallId || !lastContext) {
-        return undefined;
-      }
+	pi.on("tool_call", async (event, ctx) => {
+		try {
+			if (isDisabled() || !isToolCallEventType("read", event) || event.parentToolCallId || !lastContext) {
+				return undefined;
+			}
 
-      const input = event.input;
+			const input = event.input;
 
-      if (typeof input.path !== "string" || basename(input.path) !== SKILL_FILE) {
-        return undefined;
-      }
+			if (typeof input.path !== "string" || basename(input.path) !== SKILL_FILE) {
+				return undefined;
+			}
 
-      const target = canonicalPath(input.path, ctx.cwd);
+			const target = canonicalPath(input.path, ctx.cwd);
 
-      if (basename(target) !== SKILL_FILE) {
-        return undefined;
-      }
+			if (basename(target) !== SKILL_FILE) {
+				return undefined;
+			}
 
-      const current = readFileSync(target, "utf8");
+			const current = readFileSync(target, "utf8");
 
-      if (!isFullReadArgs(input, current)) {
-        return undefined;
-      }
+			if (!isFullReadArgs(input, current)) {
+				return undefined;
+			}
 
-      const found = findInContext(lastContext, target, current, ctx.cwd);
+			const found = findInContext(lastContext, target, current, ctx.cwd);
 
-      if (!found) {
-        return undefined;
-      }
+			if (!found) {
+				return undefined;
+			}
 
-      const origin = found.source === "skill"
-        ? `the /skill:${found.skillName} injection earlier in this conversation (frontmatter omitted)`
-        : "an earlier read in this conversation";
+			const origin =
+				found.source === "skill"
+					? `the /skill:${found.skillName} injection earlier in this conversation (frontmatter omitted)`
+					: "an earlier read in this conversation";
 
-      const reason = `Not re-read: the complete current text of ${target} is already in your context from ${origin}. Use that copy.`;
+			const reason = `Not re-read: the complete current text of ${target} is already in your context from ${origin}. Use that copy.`;
 
-      if (ctx.hasUI) {
-        try {
-          ctx.ui.notify(`skill-read-dedupe: skipped re-read of ${basename(dirname(target))}/${SKILL_FILE}`, "info");
-        } catch {
-          // UI is best effort.
-        }
-      }
+			if (ctx.hasUI) {
+				try {
+					ctx.ui.notify(`skill-read-dedupe: skipped re-read of ${basename(dirname(target))}/${SKILL_FILE}`, "info");
+				} catch {
+					// UI is best effort.
+				}
+			}
 
-      return { block: true, reason };
-    } catch {
-      return undefined;
-    }
-  });
+			return { block: true, reason };
+		} catch {
+			return undefined;
+		}
+	});
 }

@@ -10,13 +10,13 @@ Everything ships as a single Pi package. Install the lot, or pick just the exten
 
 ## Extensions at a glance
 
-| Extension | What it does |
-| --- | --- |
-| [`custom-footer`](#custom-footer) | Pi's footer with context shown in tokens, earlier warnings, and branch display that works in containers |
-| [`conditional-instructions`](#conditional-instructions) | Load instructions only when the agent touches matching files |
-| [`skill-read-dedupe`](#skill-read-dedupe) | Stop the agent re-reading a skill that's already in context |
-| [`tmux-agents`](#tmux-agents) | Spawn, drive and coordinate other Pi agents in tmux windows |
-| [`session-eval`](#session-eval) | Export sessions as trace bundles, with a skill to evaluate them |
+| Extension                                               | What it does                                                                                            |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| [`custom-footer`](#custom-footer)                       | Pi's footer with context shown in tokens, earlier warnings, and branch display that works in containers |
+| [`conditional-instructions`](#conditional-instructions) | Load instructions only when the agent touches matching files                                            |
+| [`skill-read-dedupe`](#skill-read-dedupe)               | Stop the agent re-reading a skill that's already in context                                             |
+| [`tmux-agents`](#tmux-agents)                           | Spawn, drive and coordinate other Pi agents in tmux windows                                             |
+| [`session-eval`](#session-eval)                         | Export sessions as trace bundles, with a skill to evaluate them                                         |
 
 ---
 
@@ -48,9 +48,9 @@ Install the package, then narrow it in `~/.pi/agent/settings.json` by replacing 
 
 ```json
 {
-  "source": "git:github.com/davetoland/pi-agent-extensions",
-  "extensions": ["custom-footer/index.ts", "skill-read-dedupe/index.ts"],
-  "skills": []
+	"source": "git:github.com/davetoland/pi-agent-extensions",
+	"extensions": ["custom-footer/index.ts", "skill-read-dedupe/index.ts"],
+	"skills": []
 }
 ```
 
@@ -106,6 +106,7 @@ Put Markdown files with frontmatter anywhere under `~/.pi/agent/instructions/`. 
 
 ```markdown
 ---
+
 description: React component conventions
 applyTo: "src/**/*.tsx, src/**/*.jsx"
 ---
@@ -152,18 +153,18 @@ See [`skill-read-dedupe/README.md`](skill-read-dedupe/README.md) for the exact m
 
 The parent agent drives its children through tools:
 
-| Tool | What it does |
-| --- | --- |
-| `tmux_agent_spawn` | Start a child Pi in a new window or pane, optionally with its own working directory, system prompt, model and thinking level |
-| `tmux_agent_send` | Submit a prompt or slash command to a ready child |
-| `tmux_agent_read` | Read a child's latest reply, or its visible terminal |
-| `tmux_agent_context` | Check a child's context usage, model and thinking level |
-| `tmux_agent_list` | List the children this agent has spawned |
-| `tmux_agent_permissions` | Allow or revoke messaging between agents |
-| `tmux_agent_peers` | List the agents the caller may message |
-| `tmux_agent_message` | Send a steering or interrupting message to one agent |
-| `tmux_agent_broadcast` | Message all or selected children at once |
-| `tmux_agent_messages` | Inspect the family's messages and their delivery status |
+| Tool                     | What it does                                                                                                                 |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| `tmux_agent_spawn`       | Start a child Pi in a new window or pane, optionally with its own working directory, system prompt, model and thinking level |
+| `tmux_agent_send`        | Submit a prompt or slash command to a ready child                                                                            |
+| `tmux_agent_read`        | Read a child's latest reply, or its visible terminal                                                                         |
+| `tmux_agent_context`     | Check a child's context usage, model and thinking level                                                                      |
+| `tmux_agent_list`        | List the children this agent has spawned                                                                                     |
+| `tmux_agent_permissions` | Allow or revoke messaging between agents                                                                                     |
+| `tmux_agent_peers`       | List the agents the caller may message                                                                                       |
+| `tmux_agent_message`     | Send a steering or interrupting message to one agent                                                                         |
+| `tmux_agent_broadcast`   | Message all or selected children at once                                                                                     |
+| `tmux_agent_messages`    | Inspect the family's messages and their delivery status                                                                      |
 
 **Highlights**
 - **Safe input.** Text is only sent to a child that's idle with an empty editor, and is pasted literally, so nothing is interpreted as a shell command.
@@ -199,7 +200,6 @@ The same export, available to the agent itself, for when the skill is loaded wit
 ### What it captures
 
 Alongside exporting, the extension records a few facts Pi doesn't keep on its own. They're stored in the session file and never sent to the model:
-
 - Which extensions and Pi version were active
 - How long each tool call took
 - Links to child sessions started by `tmux-agents`

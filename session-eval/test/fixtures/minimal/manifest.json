@@ -1,249 +1,205 @@
 {
- "schemaVersion": 1,
- "generatedAt": "2026-10-03T16:00:00.000Z",
- "source": {
-  "harness": "fixture",
-  "harnessVersion": null,
-  "adapter": "hand-made",
-  "adapterVersion": "0.0.0"
- },
- "selection": {
-  "description": "minimal hand-made fixture",
-  "scanned": 5,
-  "selected": 4,
-  "excluded": 1
- },
- "warnings": [
-  "fixture: b-root harnessFeatures unknown"
- ],
- "runs": [
-  {
-   "id": "a-root",
-   "parentId": null,
-   "rootId": "a-root",
-   "kind": "primary",
-   "label": "Feature X",
-   "agentType": null,
-   "link": null,
-   "source": {
-    "path": "/x/a.jsonl",
-    "sessionId": "sa"
-   },
-   "cwd": "/w",
-   "startedAt": "2026-09-01T10:00:00.000Z",
-   "endedAt": "2026-09-01T10:06:35.000Z",
-   "models": [
-    "acme/m1"
-   ],
-   "context": {
-    "instructions": [
-     {
-      "source": "/w/AGENTS.md",
-      "chars": 1000
-     }
-    ],
-    "skillsAvailable": [
-     {
-      "name": "tdd",
-      "path": "/s/tdd/SKILL.md",
-      "manualOnly": false
-     },
-     {
-      "name": "review-changes",
-      "path": "/s/rc/SKILL.md",
-      "manualOnly": false
-     }
-    ],
-    "toolsAvailable": [
-     "read",
-     "bash",
-     "edit",
-     "task"
-    ],
-    "systemPromptChars": 8000
-   },
-   "harnessFeatures": [
-    "feat:x"
-   ],
-   "notes": []
-  },
-  {
-   "id": "a-child",
-   "parentId": "a-root",
-   "rootId": "a-root",
-   "kind": "subagent",
-   "label": "explore docs",
-   "agentType": "Explore",
-   "link": {
-    "confidence": "explicit",
-    "method": "tool-result-link",
-    "parentCallId": "cd1"
-   },
-   "source": {
-    "path": "/x/c.jsonl",
-    "sessionId": "sc"
-   },
-   "cwd": "/w",
-   "startedAt": "2026-09-01T10:00:30.000Z",
-   "endedAt": "2026-09-01T10:04:30.000Z",
-   "models": [
-    "acme/m1"
-   ],
-   "context": {
-    "instructions": [
-     {
-      "source": "/w/AGENTS.md",
-      "chars": 1000
-     }
-    ],
-    "skillsAvailable": [],
-    "toolsAvailable": [
-     "read",
-     "bash",
-     "edit",
-     "task"
-    ],
-    "systemPromptChars": 8000
-   },
-   "harnessFeatures": [
-    "feat:x"
-   ],
-   "notes": [
-    "child note"
-   ]
-  },
-  {
-   "id": "b-root",
-   "parentId": null,
-   "rootId": "b-root",
-   "kind": "primary",
-   "label": "Fix tests",
-   "agentType": null,
-   "link": null,
-   "source": {
-    "path": "/x/b.jsonl",
-    "sessionId": "sb"
-   },
-   "cwd": "/w2",
-   "startedAt": "2026-09-02T09:00:00.000Z",
-   "endedAt": "2026-09-02T09:25:10.000Z",
-   "models": [
-    "acme/m1"
-   ],
-   "context": {
-    "instructions": null,
-    "skillsAvailable": null,
-    "toolsAvailable": null,
-    "systemPromptChars": null
-   },
-   "harnessFeatures": [],
-   "notes": []
-  },
-  {
-   "id": "c-root",
-   "parentId": null,
-   "rootId": "c-root",
-   "kind": "primary",
-   "label": null,
-   "agentType": null,
-   "link": null,
-   "source": {
-    "path": "/x/cr.jsonl",
-    "sessionId": "scr"
-   },
-   "cwd": "/w3",
-   "startedAt": "2026-09-03T08:00:00.000Z",
-   "endedAt": "2026-09-03T08:10:24.000Z",
-   "models": [
-    "acme/m1"
-   ],
-   "context": {
-    "instructions": [
-     {
-      "source": "/w3/AGENTS.md",
-      "chars": 900,
-      "contentHash": "sha256:1234567890abcdef"
-     }
-    ],
-    "skillsAvailable": [
-     {
-      "name": "tdd",
-      "path": "/s/tdd/SKILL.md",
-      "manualOnly": false,
-      "listed": true
-     },
-     {
-      "name": "review-changes",
-      "path": "/s/rc/SKILL.md",
-      "manualOnly": true,
-      "listed": false
-     }
-    ],
-    "toolsAvailable": [
-     "read",
-     "bash",
-     "edit",
-     "subagent",
-     "get_subagent_result"
-    ],
-    "systemPromptChars": 7000
-   },
-   "harnessFeatures": [
-    "feat:x"
-   ],
-   "notes": []
-  },
-  {
-   "id": "c-child",
-   "parentId": "c-root",
-   "rootId": "c-root",
-   "kind": "subagent",
-   "label": "check x",
-   "agentType": "general",
-   "link": {
-    "confidence": "explicit",
-    "method": "tool-result-link",
-    "parentCallId": "x15"
-   },
-   "source": {
-    "path": "/x/cc.jsonl",
-    "sessionId": "scc"
-   },
-   "cwd": "/w3",
-   "startedAt": "2026-09-03T08:05:00.000Z",
-   "endedAt": "2026-09-03T08:05:08.000Z",
-   "models": [
-    "acme/m1"
-   ],
-   "context": {
-    "instructions": [],
-    "skillsAvailable": [
-     {
-      "name": "tdd",
-      "path": "/s/tdd/SKILL.md",
-      "manualOnly": false,
-      "listed": true
-     },
-     {
-      "name": "review-changes",
-      "path": "/s/rc/SKILL.md",
-      "manualOnly": true,
-      "listed": false
-     }
-    ],
-    "toolsAvailable": [
-     "read",
-     "bash",
-     "edit",
-     "subagent",
-     "get_subagent_result"
-    ],
-    "systemPromptChars": 7000
-   },
-   "harnessFeatures": [
-    "feat:x"
-   ],
-   "notes": []
-  }
- ]
+	"schemaVersion": 1,
+	"generatedAt": "2026-10-03T16:00:00.000Z",
+	"source": {
+		"harness": "fixture",
+		"harnessVersion": null,
+		"adapter": "hand-made",
+		"adapterVersion": "0.0.0"
+	},
+	"selection": {
+		"description": "minimal hand-made fixture",
+		"scanned": 5,
+		"selected": 4,
+		"excluded": 1
+	},
+	"warnings": ["fixture: b-root harnessFeatures unknown"],
+	"runs": [
+		{
+			"id": "a-root",
+			"parentId": null,
+			"rootId": "a-root",
+			"kind": "primary",
+			"label": "Feature X",
+			"agentType": null,
+			"link": null,
+			"source": {
+				"path": "/x/a.jsonl",
+				"sessionId": "sa"
+			},
+			"cwd": "/w",
+			"startedAt": "2026-09-01T10:00:00.000Z",
+			"endedAt": "2026-09-01T10:06:35.000Z",
+			"models": ["acme/m1"],
+			"context": {
+				"instructions": [
+					{
+						"source": "/w/AGENTS.md",
+						"chars": 1000
+					}
+				],
+				"skillsAvailable": [
+					{
+						"name": "tdd",
+						"path": "/s/tdd/SKILL.md",
+						"manualOnly": false
+					},
+					{
+						"name": "review-changes",
+						"path": "/s/rc/SKILL.md",
+						"manualOnly": false
+					}
+				],
+				"toolsAvailable": ["read", "bash", "edit", "task"],
+				"systemPromptChars": 8000
+			},
+			"harnessFeatures": ["feat:x"],
+			"notes": []
+		},
+		{
+			"id": "a-child",
+			"parentId": "a-root",
+			"rootId": "a-root",
+			"kind": "subagent",
+			"label": "explore docs",
+			"agentType": "Explore",
+			"link": {
+				"confidence": "explicit",
+				"method": "tool-result-link",
+				"parentCallId": "cd1"
+			},
+			"source": {
+				"path": "/x/c.jsonl",
+				"sessionId": "sc"
+			},
+			"cwd": "/w",
+			"startedAt": "2026-09-01T10:00:30.000Z",
+			"endedAt": "2026-09-01T10:04:30.000Z",
+			"models": ["acme/m1"],
+			"context": {
+				"instructions": [
+					{
+						"source": "/w/AGENTS.md",
+						"chars": 1000
+					}
+				],
+				"skillsAvailable": [],
+				"toolsAvailable": ["read", "bash", "edit", "task"],
+				"systemPromptChars": 8000
+			},
+			"harnessFeatures": ["feat:x"],
+			"notes": ["child note"]
+		},
+		{
+			"id": "b-root",
+			"parentId": null,
+			"rootId": "b-root",
+			"kind": "primary",
+			"label": "Fix tests",
+			"agentType": null,
+			"link": null,
+			"source": {
+				"path": "/x/b.jsonl",
+				"sessionId": "sb"
+			},
+			"cwd": "/w2",
+			"startedAt": "2026-09-02T09:00:00.000Z",
+			"endedAt": "2026-09-02T09:25:10.000Z",
+			"models": ["acme/m1"],
+			"context": {
+				"instructions": null,
+				"skillsAvailable": null,
+				"toolsAvailable": null,
+				"systemPromptChars": null
+			},
+			"harnessFeatures": [],
+			"notes": []
+		},
+		{
+			"id": "c-root",
+			"parentId": null,
+			"rootId": "c-root",
+			"kind": "primary",
+			"label": null,
+			"agentType": null,
+			"link": null,
+			"source": {
+				"path": "/x/cr.jsonl",
+				"sessionId": "scr"
+			},
+			"cwd": "/w3",
+			"startedAt": "2026-09-03T08:00:00.000Z",
+			"endedAt": "2026-09-03T08:10:24.000Z",
+			"models": ["acme/m1"],
+			"context": {
+				"instructions": [
+					{
+						"source": "/w3/AGENTS.md",
+						"chars": 900,
+						"contentHash": "sha256:1234567890abcdef"
+					}
+				],
+				"skillsAvailable": [
+					{
+						"name": "tdd",
+						"path": "/s/tdd/SKILL.md",
+						"manualOnly": false,
+						"listed": true
+					},
+					{
+						"name": "review-changes",
+						"path": "/s/rc/SKILL.md",
+						"manualOnly": true,
+						"listed": false
+					}
+				],
+				"toolsAvailable": ["read", "bash", "edit", "subagent", "get_subagent_result"],
+				"systemPromptChars": 7000
+			},
+			"harnessFeatures": ["feat:x"],
+			"notes": []
+		},
+		{
+			"id": "c-child",
+			"parentId": "c-root",
+			"rootId": "c-root",
+			"kind": "subagent",
+			"label": "check x",
+			"agentType": "general",
+			"link": {
+				"confidence": "explicit",
+				"method": "tool-result-link",
+				"parentCallId": "x15"
+			},
+			"source": {
+				"path": "/x/cc.jsonl",
+				"sessionId": "scc"
+			},
+			"cwd": "/w3",
+			"startedAt": "2026-09-03T08:05:00.000Z",
+			"endedAt": "2026-09-03T08:05:08.000Z",
+			"models": ["acme/m1"],
+			"context": {
+				"instructions": [],
+				"skillsAvailable": [
+					{
+						"name": "tdd",
+						"path": "/s/tdd/SKILL.md",
+						"manualOnly": false,
+						"listed": true
+					},
+					{
+						"name": "review-changes",
+						"path": "/s/rc/SKILL.md",
+						"manualOnly": true,
+						"listed": false
+					}
+				],
+				"toolsAvailable": ["read", "bash", "edit", "subagent", "get_subagent_result"],
+				"systemPromptChars": 7000
+			},
+			"harnessFeatures": ["feat:x"],
+			"notes": []
+		}
+	]
 }

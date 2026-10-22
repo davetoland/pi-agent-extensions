@@ -12,36 +12,36 @@ Install it with the rest of this repository's package (see the [main README](../
 
 All tools return bounded JSON text. IDs are tmux pane IDs such as `%12`, not names. Only children launched by the current parent process are eligible. Existing agents cannot be adopted.
 
-| Tool | Parameters | Result |
-| --- | --- | --- |
-| `tmux_agent_spawn` | `name`, optional `mode`, `cwd`, `systemPrompt`, `provider`, `model`, `thinking`, `waitMs` | New pane ID, window ID, label, and readiness status |
-| `tmux_agent_send` | `id`, `text` | Terminal submission status, not an acceptance confirmation |
-| `tmux_agent_read` | `id`, optional `terminal`, `maxChars` | Latest completed assistant reply, or visible terminal output |
-| `tmux_agent_context` | `id` | Context tokens, Xk, capacity, percent, selected model, and thinking level |
-| `tmux_agent_list` | Optional `offset` | Up to 50 managed children with IDs and status, plus `nextOffset` |
-| `tmux_agent_permissions` | `action`, and `from`, `to` for `grant` or `revoke` | Manage directed peer-message permission edges in the caller's own spawn family |
-| `tmux_agent_peers` | None | The endpoints the caller may message in its family |
-| `tmux_agent_message` | `to`, `text`, `mode` | Queue one peer message |
-| `tmux_agent_broadcast` | `text`, `mode`, optional `recipients` | Queue one independent message for each selected child |
-| `tmux_agent_messages` | Optional `offset`, `peer`, `maxChars` | Inspect message records in the caller's own spawn family |
+| Tool                     | Parameters                                                                                | Result                                                                         |
+| ------------------------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `tmux_agent_spawn`       | `name`, optional `mode`, `cwd`, `systemPrompt`, `provider`, `model`, `thinking`, `waitMs` | New pane ID, window ID, label, and readiness status                            |
+| `tmux_agent_send`        | `id`, `text`                                                                              | Terminal submission status, not an acceptance confirmation                     |
+| `tmux_agent_read`        | `id`, optional `terminal`, `maxChars`                                                     | Latest completed assistant reply, or visible terminal output                   |
+| `tmux_agent_context`     | `id`                                                                                      | Context tokens, Xk, capacity, percent, selected model, and thinking level      |
+| `tmux_agent_list`        | Optional `offset`                                                                         | Up to 50 managed children with IDs and status, plus `nextOffset`               |
+| `tmux_agent_permissions` | `action`, and `from`, `to` for `grant` or `revoke`                                        | Manage directed peer-message permission edges in the caller's own spawn family |
+| `tmux_agent_peers`       | None                                                                                      | The endpoints the caller may message in its family                             |
+| `tmux_agent_message`     | `to`, `text`, `mode`                                                                      | Queue one peer message                                                         |
+| `tmux_agent_broadcast`   | `text`, `mode`, optional `recipients`                                                     | Queue one independent message for each selected child                          |
+| `tmux_agent_messages`    | Optional `offset`, `peer`, `maxChars`                                                     | Inspect message records in the caller's own spawn family                       |
 
 ### Spawn
 
 ```json
-{"name":"worker2"}
+{ "name": "worker2" }
 ```
 
 The default is a new detached tmux **window** in the parent's tmux session. The parent keeps focus. `name` sets the bottom tab's window label and Pi's `--name`. It must contain 1–48 letters, digits, underscores, or hyphens, starting with a letter or digit. Existing window labels and names already recorded by this parent are rejected, including retired names. Automatic window renaming and terminal-driven window renaming are disabled for the destination window.
 
 ```json
 {
-  "name":"reviewer2",
-  "mode":"window",
-  "cwd":"/workspace",
-  "systemPrompt":"/absolute/path/review-system.md",
-  "provider":"github-copilot",
-  "model":"YOUR_CONFIGURED_MODEL_ID",
-  "thinking":"high"
+	"name": "reviewer2",
+	"mode": "window",
+	"cwd": "/workspace",
+	"systemPrompt": "/absolute/path/review-system.md",
+	"provider": "github-copilot",
+	"model": "YOUR_CONFIGURED_MODEL_ID",
+	"thinking": "high"
 }
 ```
 
@@ -69,7 +69,7 @@ A child sees all ten tools, but its `tmux_agent_permissions` and `tmux_agent_mes
 The family owner manages an allow-list with `tmux_agent_permissions`:
 
 ```json
-{"action":"grant","from":"worker1","to":"worker2"}
+{ "action": "grant", "from": "worker1", "to": "worker2" }
 ```
 
 `action` is `grant`, `revoke`, or `list`. `from` and `to` are required for `grant` and `revoke`. A grant or revoke returns the full `edges` list; `list` returns the full permission object.
@@ -83,19 +83,19 @@ Use `tmux_agent_peers` to discover only the endpoints the current caller may sen
 ### Send one message or broadcast
 
 ```json
-{"to":"worker2","text":"Check the failing test.","mode":"steering"}
+{ "to": "worker2", "text": "Check the failing test.", "mode": "steering" }
 ```
 
 `tmux_agent_message` accepts `text` from 1 to 10000 characters and `mode` `steering` or `interrupt`. It writes one immutable message record and returns:
 
 ```json
-{"messageId":"…","to":"worker2","mode":"steering","delivery":"turn","state":"queued"}
+{ "messageId": "…", "to": "worker2", "mode": "steering", "delivery": "turn", "state": "queued" }
 ```
 
 `queued` means the record was written. It does not confirm recipient acceptance or delivery.
 
 ```json
-{"text":"Stop and report your current result.","mode":"interrupt","recipients":["worker1","worker2"]}
+{ "text": "Stop and report your current result.", "mode": "interrupt", "recipients": ["worker1", "worker2"] }
 ```
 
 `tmux_agent_broadcast` acts on the caller's own spawned children. It writes one independent record per recipient with a shared `broadcastId`. With no `recipients`, it targets all live children. A supplied recipient list is processed as given. The result has one queued record or error per requested child. A delivered message consumes recipient tokens and can start work; a broadcast to all children can start every child at once.
@@ -128,26 +128,26 @@ The family owner can use `tmux_agent_messages` with optional non-negative `offse
 
 Each message has one durable record and a receipt outcome. Stored receipt states are:
 
-| State | Meaning |
-| --- | --- |
-| `delivered` | Injected into the recipient's session |
-| `notified` | A parent-addressed record was processed as a passive ping |
-| `failed-interrupt-timeout` | Three abort-and-wait attempts did not reach idle; nothing was delivered |
-| `blocked-revoked` | The permission edge was absent at delivery time |
-| `invalid-record` | The record failed file, schema, or size validation |
-| `expired-stale` | The record predates the recipient process start |
-| `failed-injection` | Reserved receipt state for an injection or receipt-path failure other than interrupt timeout |
+| State                      | Meaning                                                                                      |
+| -------------------------- | -------------------------------------------------------------------------------------------- |
+| `delivered`                | Injected into the recipient's session                                                        |
+| `notified`                 | A parent-addressed record was processed as a passive ping                                    |
+| `failed-interrupt-timeout` | Three abort-and-wait attempts did not reach idle; nothing was delivered                      |
+| `blocked-revoked`          | The permission edge was absent at delivery time                                              |
+| `invalid-record`           | The record failed file, schema, or size validation                                           |
+| `expired-stale`            | The record predates the recipient process start                                              |
+| `failed-injection`         | Reserved receipt state for an injection or receipt-path failure other than interrupt timeout |
 
 `pending` means no receipt exists yet and is shown during inspection but is not stored. `undeliverable` is also inspection-only and means the recipient child pane is gone. Parent-addressed rows include `readAt`, which is `null` until read.
 
 ## Send and read
 
 ```json
-{"id":"%12","text":"Review the error handling.\nDo not edit files."}
+{ "id": "%12", "text": "Review the error handling.\nDo not edit files." }
 ```
 
 ```json
-{"id":"%12","text":"/model provider/exact-model-id"}
+{ "id": "%12", "text": "/model provider/exact-model-id" }
 ```
 
 Text goes through tmux bracketed paste, then a separate Enter. Built-in slash commands reach the real TUI. No text is evaluated as a shell command by this extension, and key-like text such as `C-c` remains text. Pi still interprets its normal commands, including `!` shell input. Pi's editor expands pasted tabs to spaces.
@@ -159,13 +159,13 @@ These checks are not an editor lock. Sending assumes the child currently has a n
 A successful send means tmux accepted paste and Enter. It does not prove Pi accepted or executed the command. Inspect the reply, model telemetry, or terminal afterward. A failed send can leave pasted text in the editor. Do not retry blindly.
 
 ```json
-{"id":"%12"}
+{ "id": "%12" }
 ```
 
 Use this with `tmux_agent_read` for the latest completed assistant message. It returns text blocks, the message ID, stop reason, and any error. It excludes thinking blocks, tool calls, tool results, and user prompts. It does not stream a partial reply or return the whole conversation. `busy` can accompany an earlier completed reply. Check the reply ID and snapshot timestamp.
 
 ```json
-{"id":"%12","terminal":true,"maxChars":8000}
+{ "id": "%12", "terminal": true, "maxChars": 8000 }
 ```
 
 Terminal mode reads the current screen and up to 200 preceding terminal lines. Use it for `/session`, command feedback, startup diagnostics, or dialogs. It returns visible terminal text, which can include prompts, expanded thinking, or sensitive text displayed by Pi. It does not retrieve hidden thinking from session storage. Request terminal mode only when that exposure is acceptable.
@@ -175,18 +175,18 @@ Terminal mode reads the current screen and up to 200 preceding terminal lines. U
 ## Context
 
 ```json
-{"id":"%12"}
+{ "id": "%12" }
 ```
 
 Use this with `tmux_agent_context`. Example context fields:
 
 ```json
 {
-  "tokens":123456,
-  "tokensK":"123.5k",
-  "contextWindow":200000,
-  "contextWindowK":"200.0k",
-  "percent":61.728
+	"tokens": 123456,
+	"tokensK": "123.5k",
+	"contextWindow": 200000,
+	"contextWindowK": "200.0k",
+	"percent": 61.728
 }
 ```
 
@@ -204,13 +204,13 @@ Snapshots are not live token counters during streaming. `updatedAt` identifies t
 
 Right-click a window's tab in the tmux status bar to open a menu for that window:
 
-| Item | What it does |
-| --- | --- |
-| Panes to Windows | Breaks every pane except the first out into its own window |
-| Join *window* | Moves every pane of the clicked window into the chosen window, lays them out side by side, and switches you there |
-| Send Left / Send Right / Send to End | Moves the window along the tab bar, keeping window numbers contiguous |
-| Rename | Renames the window's tab |
-| Kill | Closes the window, and anything running in it, after you confirm |
+| Item                                 | What it does                                                                                                      |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| Panes to Windows                     | Breaks every pane except the first out into its own window                                                        |
+| Join _window_                        | Moves every pane of the clicked window into the chosen window, lays them out side by side, and switches you there |
+| Send Left / Send Right / Send to End | Moves the window along the tab bar, keeping window numbers contiguous                                             |
+| Rename                               | Renames the window's tab                                                                                          |
+| Kill                                 | Closes the window, and anything running in it, after you confirm                                                  |
 
 Items that don't apply, such as Send Left on the first tab, are greyed out. Moving panes between windows is safe for spawned agents: they are tracked by pane ID, process ID and process start time, which survive a move, so they stay manageable from the parent. Rename changes only the tab label. Tools and peer messages still address an agent by the name it was spawned with.
 
@@ -226,18 +226,17 @@ When agents share a window, [`layout.mjs`](layout.mjs) arranges them automatical
 
 Right-click inside an agent pane for its menu:
 
-| Item | What it does |
-| --- | --- |
-| Layout... | Choose **Auto** (the default), **Main + stack**, **Three columns**, **Equal grid** or **Keep current layout**, set the main pane's width (automatic, or 30% to 70%), or reapply the layout now |
-| Focus this agent / Restore layout | Zooms the pane to fill the window, and back |
-| Keep current layout (drag borders) | Stops automatic arrangement for this window |
-| Use this pane as main | Makes this pane the large one |
-| Switch to *agent* | Jumps to that agent's pane |
+| Item                               | What it does                                                                                                                                                                                   |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Layout...                          | Choose **Auto** (the default), **Main + stack**, **Three columns**, **Equal grid** or **Keep current layout**, set the main pane's width (automatic, or 30% to 70%), or reapply the layout now |
+| Focus this agent / Restore layout  | Zooms the pane to fill the window, and back                                                                                                                                                    |
+| Keep current layout (drag borders) | Stops automatic arrangement for this window                                                                                                                                                    |
+| Use this pane as main              | Makes this pane the large one                                                                                                                                                                  |
+| Switch to _agent_                  | Jumps to that agent's pane                                                                                                                                                                     |
 
 **Auto** gives the main pane 60% of the width with one agent, 50% with up to three, 40% with up to six and 35% beyond that, and splits the agents into more columns from four agents up, or sooner if a single column would make them too short. A terminal too small for the chosen layout keeps its current layout and shows a message.
 
 A parent Pi sets this up when it starts inside tmux. It runs `layout.mjs` with `node`, which must be on your `PATH`:
-
 - It turns on mouse mode for the parent's tmux session, which the right-click menus need.
 - It registers six tmux hooks (`window-layout-changed`, `window-resized`, `window-linked`, `pane-exited`, `after-split-window` and `after-kill-pane`) at index 81731, so a restart or `/reload` replaces them rather than adding more. Each hook checks the window's size and pane count inside tmux first, so mouse drags don't start a `node` process.
 - It binds a right-click in a pane (`MouseDown3Pane`) to the agent menu in managed windows only. Elsewhere, the key keeps whatever it did before.
