@@ -488,12 +488,12 @@ export class TmuxAgents {
 					.catch(() => undefined);
 			}
 			const deadline = Date.now() + (params.waitMs ?? 10000);
-			let state;
-			do {
-				state = await this.inspect(record, signal);
-				if (state.status !== "starting" || Date.now() >= deadline) break;
+			// Poll until the child reports something other than "starting", or the wait runs out.
+			let state = await this.inspect(record, signal);
+			while (state.status === "starting" && Date.now() < deadline) {
 				await delay(100, undefined, { signal });
-			} while (true);
+				state = await this.inspect(record, signal);
+			}
 			return {
 				id: pane.id,
 				window: pane.window,

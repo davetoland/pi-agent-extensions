@@ -247,19 +247,6 @@ function isoOrNull(t) {
 	return null;
 }
 
-function _shortData(v, depth = 0) {
-	if (typeof v === "string") return excerpt(v, LIMIT.note);
-	if (Array.isArray(v)) return depth > 3 ? `[array ${v.length}]` : v.slice(0, 50).map((x) => _shortData(x, depth + 1));
-	if (v && typeof v === "object") {
-		if (depth > 3) return "[object]";
-		const o = {};
-		for (const [k, x] of Object.entries(v))
-			o[k] = isSensitiveKey(k) && typeof x === "string" ? "[REDACTED]" : _shortData(x, depth + 1);
-		return o;
-	}
-	return v;
-}
-
 // ---------------------------------------------------------------------------
 // File reading
 // ---------------------------------------------------------------------------

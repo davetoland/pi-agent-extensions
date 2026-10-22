@@ -998,7 +998,9 @@ async function analyseRun(run, bundleDir, cfg, rx, gap, bctx) {
 		} else if (rx.search.test(r.name)) parts = [{ cat: "search" }];
 		else parts = [{ cat: "other" }];
 		catOfResult.set(r.seq, parts[0].cat);
-		parts.forEach((p, i) => addCat(p.cat, chars / parts.length, r.seq, i === 0));
+		parts.forEach((p, i) => {
+			addCat(p.cat, chars / parts.length, r.seq, i === 0);
+		});
 	}
 	for (const b of Object.values(m.context.byCategory)) {
 		b.chars = Math.round(b.chars);
@@ -1260,8 +1262,8 @@ async function analyseRun(run, bundleDir, cfg, rx, gap, bctx) {
 			if (ids.size && !policy) {
 				if (!disc.has(discShape)) disc.set(discShape, { ids: new Set(), kinds: new Set(), cs: [] });
 				const d = disc.get(discShape);
-				ids.forEach((x) => d.ids.add(x));
-				kinds.forEach((x) => d.kinds.add(x));
+				for (const x of ids) d.ids.add(x);
+				for (const x of kinds) d.kinds.add(x);
 				d.cs.push(c);
 			}
 			if (segs.some((seg) => rx.verifyCmd.some((re) => re.test(seg)))) aux.hasVerify = true;
@@ -1517,7 +1519,7 @@ function riskyMatch(c, rx) {
 		}
 		const hits = rx.risky.filter((d) => d.re.test(s.text)).map((d) => d.id);
 		if (!hits.length) continue;
-		hits.forEach((x) => ids.add(x));
+		for (const x of hits) ids.add(x);
 		if (hits.every((h) => h === "rm-rf") && s.words.length) {
 			anyDelete = true;
 			const targets = s.words
@@ -2140,7 +2142,7 @@ export async function analyseBundle(bundleDir, cfg) {
 				x.discoveryCalls++;
 				x.trees.add(r.rootId);
 				x.runs.add(r.id);
-				s.discKinds.forEach((k) => x.kinds.add(k));
+				for (const k of s.discKinds) x.kinds.add(k);
 			}
 			if (!shapes.has(s.shape))
 				shapes.set(s.shape, {
@@ -2387,7 +2389,12 @@ export async function analyseBundle(bundleDir, cfg) {
 		delegations: delegations.length,
 		flags: flags.length,
 		flagSeverity: sevTotals,
-		kinds: sortObj(runsMeta.reduce((o, r) => (inc(o, r.kind ?? "null"), o), {})),
+		kinds: sortObj(
+			runsMeta.reduce((o, r) => {
+				inc(o, r.kind ?? "null");
+				return o;
+			}, {}),
+		),
 		models: [...new Set(runsOut.flatMap((r) => r.metrics.models))].sort(),
 	};
 
@@ -2589,11 +2596,11 @@ export function renderMd(d) {
 	if (!LQ.length) push("- none");
 	else {
 		push("| # | type | target | flags | trees | runs | impact | sample refs |", "|---|---|---|---|---|---|---|---|");
-		LQ.slice(0, 20).forEach((x, i) =>
+		LQ.slice(0, 20).forEach((x, i) => {
 			push(
 				`| ${i + 1} | ${x.type}${x.heuristic ? " (h)" : ""} | ${mdCell(clip(x.target ?? "-", 60))} | ${x.flags} | ${x.trees} | ${x.runs} | ${mdCell(impactStr(x))}${x.share != null ? `, ${pct(x.share)} of output` : ""} | ${mdCell(x.sampleRefs.slice(0, 2).join(", ") || "-")} |`,
-			),
-		);
+			);
+		});
 	}
 	push(...more(LQ.length, 20), "");
 	const LU = d.leads.unquantified;
