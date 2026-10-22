@@ -123,7 +123,7 @@ export default function (pi: ExtensionAPI) {
 
 			const { pressure } = pressureFor(ctx);
 
-			if (!pressure || pressure.level !== "block") {
+			if (pressure?.level !== "block") {
 				return undefined;
 			}
 

@@ -267,7 +267,7 @@ export function shouldBlockRead(
 	input: Record<string, unknown>,
 	fileSize: number | undefined,
 ): boolean {
-	if (!pressure || pressure.level !== "block" || typeof input.path !== "string") {
+	if (pressure?.level !== "block" || typeof input.path !== "string") {
 		return false;
 	}
 

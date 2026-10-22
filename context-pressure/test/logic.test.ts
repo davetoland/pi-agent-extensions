@@ -335,7 +335,8 @@ describe("truncateContent", () => {
 
 	it("subagent note tells it to return", () => {
 		const r = truncateContent([{ type: "text", text: "x".repeat(10_000) }], RESULT_MAX_BYTES, sub(160_000) as Pressure);
-		assert.match((r?.content.at(-1) as { text: string }).text, /Return your findings now\./);
+		assert.ok(r);
+		assert.match((r.content.at(-1) as { text: string }).text, /Return your findings now\./);
 	});
 
 	it("spans multiple text blocks and keeps non-text blocks", () => {
@@ -351,7 +352,7 @@ describe("truncateContent", () => {
 		assert.equal(r.keptBytes, RESULT_MAX_BYTES);
 		assert.ok(r.content.includes(image));
 		const all = textOf(r.content);
-		assert.ok(all.startsWith("A".repeat(3000) + "B"));
+		assert.ok(all.startsWith(`${"A".repeat(3000)}B`));
 		assert.ok(all.includes("C".repeat(1024)));
 	});
 

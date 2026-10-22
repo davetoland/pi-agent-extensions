@@ -14,10 +14,11 @@
 		"node": ">=22.5.0"
 	},
 	"scripts": {
-		"test": "node --test session-eval/test/test-digest.mjs tmux-agents/test.mjs"
+		"test": "node --test context-pressure/test/logic.test.ts session-eval/test/test-digest.mjs tmux-agents/test.mjs"
 	},
 	"pi": {
 		"extensions": [
+			"./context-pressure/index.ts",
 			"./custom-footer/index.ts",
 			"./conditional-instructions/index.ts",
 			"./skill-read-dedupe/index.ts",

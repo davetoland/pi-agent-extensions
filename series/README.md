@@ -2,7 +2,7 @@
 
 **Extending Pi** is a mini-series I've written about the [Pi coding agent](https://pi.dev). Each part looks at a way of extending the harness, what it adds, and how it can help you in day-to-day development. The parts get steadily more complex, from a footer tweak to a team of agents in tmux, and finish with how to write your own.
 
-Install all five extensions with:
+Install all six extensions with:
 
 ```bash
 pi install git:github.com/davetoland/pi-agent-extensions@v0.1.1
