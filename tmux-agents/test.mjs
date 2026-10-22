@@ -715,6 +715,77 @@ test("outside tmux or Linux the extension registers nothing", async () => {
 	}
 });
 
+test("recognises pi-subagents sessions but not top-level or tmux-spawned ones", () => {
+	const exists = (path) => path === "/s/--w--/2026_abc.jsonl";
+	assert.equal(mod.isSubagentSessionFile("/s/--w--/2026_abc/tasks/child.jsonl", exists), true);
+	assert.equal(
+		mod.isSubagentSessionFile("C:\\s\\--w--\\2026_abc\\tasks\\child.jsonl", (p) => p === "C:/s/--w--/2026_abc.jsonl"),
+		true,
+	);
+	assert.equal(
+		mod.isSubagentSessionFile("/tmp/pi-subagents-1000/w/tasks/child.jsonl", () => false),
+		true,
+	);
+	assert.equal(
+		mod.isSubagentSessionFile("/s/--w--/2026_abc/tasks/child.jsonl", () => false),
+		false,
+		"no parent transcript",
+	);
+	assert.equal(
+		mod.isSubagentSessionFile("/s/--w--/2026_abc.jsonl", exists),
+		false,
+		"top-level session, including a tmux agent",
+	);
+	assert.equal(mod.isSubagentSessionFile(undefined, exists), false, "--no-session");
+});
+
+test("inside a pi-subagents subagent the extension removes and refuses its tools", async () => {
+	const root = mkdtempSync(join(tmpdir(), "tmux-agents-subagent-"));
+	const parentFile = join(root, "2026_parent.jsonl");
+	writeFileSync(parentFile, "");
+	const childFile = join(root, "2026_parent", "tasks", "child.jsonl");
+	const run = async (sessionFile) => {
+		const tools = new Map();
+		const handlers = [];
+		let active;
+		await insideTmux(async () => {
+			mod.default({
+				registerTool(tool) {
+					tools.set(tool.name, tool);
+				},
+				on(event, handler) {
+					if (event === "session_start") handlers.push(handler);
+				},
+				getActiveTools: () => ["read", "bash", ...tools.keys()],
+				setActiveTools: (names) => {
+					active = names;
+				},
+				exec: async () => ({ code: 1, stdout: "", stderr: "" }),
+			});
+			const ctx = {
+				mode: "print",
+				hasUI: false,
+				sessionManager: { getSessionFile: () => sessionFile, getSessionId: () => "s" },
+			};
+			for (const handler of handlers) await handler({ reason: "startup" }, ctx);
+		});
+		return { tools, active };
+	};
+
+	const sub = await run(childFile);
+	assert.deepEqual(sub.active, ["read", "bash"], "every tmux_agent_* tool is removed from the model");
+	for (const name of ["tmux_agent_spawn", "tmux_agent_list", "tmux_agent_message", "tmux_agent_peers"]) {
+		await assert.rejects(
+			sub.tools.get(name).execute("id", { name: "x", id: "%1", to: "parent", text: "hi", mode: "steering" }),
+			/not available in a subagent/,
+		);
+	}
+
+	const top = await run(parentFile);
+	assert.equal(top.active, undefined, "a top-level session keeps its tools");
+	assert.equal(top.tools.size, 10);
+});
+
 test("peer tool schemas expose only the agreed modes and bounded message text", async () => {
 	const tools = new Map();
 	await insideTmux(() =>
