@@ -1,9 +1,7 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { dirname, isAbsolute, join, matchesGlob, relative, resolve, sep } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, isReadToolResult, isToolCallEventType } from "@earendil-works/pi-coding-agent";
-
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-
-import { dirname, isAbsolute, join, relative, resolve, sep, matchesGlob } from "node:path";
 
 interface Instruction {
 	path: string;
@@ -174,7 +172,7 @@ export default function conditionalInstructions(pi: ExtensionAPI) {
 			.map((instruction) => {
 				const description = instruction.description ? ` — ${instruction.description}` : "";
 
-				return `- ${instruction.path}` + ` [${instruction.applyTo.join(", ")}]` + description;
+				return `- ${instruction.path} [${instruction.applyTo.join(", ")}]${description}`;
 			})
 			.join("\n");
 
@@ -245,7 +243,7 @@ corresponding instruction file has been read and followed.
 		}
 
 		const ruleText = applicable
-			.map((instruction) => `## Instructions from ${instruction.path}\n\n` + instruction.content)
+			.map((instruction) => `## Instructions from ${instruction.path}\n\n${instruction.content}`)
 			.join("\n\n");
 
 		return {
@@ -253,7 +251,7 @@ corresponding instruction file has been read and followed.
 				...event.content,
 				{
 					type: "text",
-					text: "\n\n---\n\n" + "Applicable repository instructions:\n\n" + ruleText,
+					text: `\n\n---\n\nApplicable repository instructions:\n\n${ruleText}`,
 				},
 			],
 		};

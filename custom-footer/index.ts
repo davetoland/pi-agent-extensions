@@ -276,7 +276,7 @@ export default function footer(pi: ExtensionAPI) {
 						: false;
 
 					if (usageTotals.cost || usingSubscription) {
-						statsParts.push(`$${usageTotals.cost.toFixed(3)}` + (usingSubscription ? " (sub)" : ""));
+						statsParts.push(`$${usageTotals.cost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`);
 					}
 
 					/*
@@ -352,7 +352,7 @@ export default function footer(pi: ExtensionAPI) {
 					let rightSide = rightSideWithoutProvider;
 
 					if (footerData.getAvailableProviderCount() > 1 && ctx.model) {
-						const withProvider = `(${ctx.model.provider}) ` + rightSideWithoutProvider;
+						const withProvider = `(${ctx.model.provider}) ${rightSideWithoutProvider}`;
 
 						if (statsLeftWidth + 2 + visibleWidth(withProvider) <= width) {
 							rightSide = withProvider;

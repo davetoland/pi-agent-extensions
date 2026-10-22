@@ -1,13 +1,13 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import { execFile, execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-import { execFileSync, execFile } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import test from "node:test";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { pathToFileURL } from "node:url";
+
 const exec = promisify(execFile);
 
 // Use the already-installed Pi loader dependencies. No installation is needed.
@@ -1369,7 +1369,7 @@ export default function(pi) {
 			await wait(async () => (await manager.context(windowChild.id)).context.tokens === actual.context.tokens);
 			assert.equal(
 				(await manager.context(windowChild.id)).context.tokensK,
-				(actual.context.tokens / 1000).toFixed(1) + "k",
+				`${(actual.context.tokens / 1000).toFixed(1)}k`,
 			);
 			assert.equal((await manager.read(windowChild.id)).reply.text, "synthetic reply B");
 			assert.doesNotMatch(JSON.stringify(await manager.read(windowChild.id)), /PRIVATE|0000000000000000/);
