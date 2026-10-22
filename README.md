@@ -15,6 +15,7 @@ Everything ships as a single Pi package. Install the lot, or pick just the exten
 | [`custom-footer`](#custom-footer)                       | Pi's footer with context shown in tokens, earlier warnings, and branch display that works in containers |
 | [`conditional-instructions`](#conditional-instructions) | Load instructions only when the agent touches matching files                                            |
 | [`skill-read-dedupe`](#skill-read-dedupe)               | Stop the agent re-reading a skill that's already in context                                             |
+| [`context-pressure`](#context-pressure)                 | Push the agent to delegate as its context fills, and cut off heavy reads past a limit                   |
 | [`tmux-agents`](#tmux-agents)                           | Spawn, drive and coordinate other Pi agents in tmux windows                                             |
 | [`session-eval`](#session-eval)                         | Export sessions as trace bundles, with a skill to evaluate them                                         |
 
@@ -37,7 +38,7 @@ pi install git:github.com/davetoland/pi-agent-extensions
 Add `-l` to install into the current project only. To pin a release, add its tag:
 
 ```bash
-pi install git:github.com/davetoland/pi-agent-extensions@v0.1.0
+pi install git:github.com/davetoland/pi-agent-extensions@v0.1.1
 ```
 
 Update or remove it with `pi update` and `pi remove`.
@@ -87,7 +88,7 @@ custom-footer:  ↑394k ↓24k R4.4M CH93.9% $3.802 (sub) 244k/1.1M (23.2%) (aut
 ```
 
 - **Tokens used, not just a percentage.** Context shows as tokens used against the window, with the percentage after it.
-- **Earlier warning.** The context reading turns amber at 40% and red at 60%, instead of Pi's 70% and 90%. The thresholds are two constants at the top of the file.
+- **Earlier warning.** The context reading turns amber at 20% and red at 40%, instead of Pi's 70% and 90%. These match where [`context-pressure`](#context-pressure) starts warning and blocking. The thresholds are two constants at the top of the file.
 - **Branch display that works in containers.** Pi notices branch changes by watching `.git`, which misses changes on some bind mounts, such as a Windows folder mounted into a Docker container. This footer also polls `HEAD`, and handles worktrees and submodules.
 
 It's one file with one event handler, which makes it a good starting point for your own footer. One difference from Pi's own footer: it can't show which model a routed request went to, because extensions can't see that.
@@ -145,6 +146,23 @@ See [`skill-read-dedupe/README.md`](skill-read-dedupe/README.md) for the exact m
 
 ---
 
+## context-pressure
+
+**Keep the main session lean as the context window fills.**
+
+Agents tend to keep reading and searching in their own context long after they should hand work off. `context-pressure` steps in at two levels, each a percentage of the context window or a token cap, whichever comes first:
+
+| Level | Main session       | Subagent session   | What happens                                                                                            |
+| ----- | ------------------ | ------------------ | ------------------------------------------------------------------------------------------------------- |
+| Warn  | 20% or 200k tokens | 20% or 100k tokens | A short note on a tool result: delegate further reading, or in a subagent, finish and return            |
+| Block | 40% or 400k tokens | 40% or 150k tokens | Full reads of files over 16 KB are blocked, and other tool output over 4 KB is cut to its start and end |
+
+The warning repeats as usage climbs, and resets after compaction. Delegation and state-saving tools, such as `write`, `edit` and the `tmux_agent_*` tools, are never blocked or truncated. Like the other extensions, it fails open: on any error or missing usage data, nothing is blocked.
+
+Its advice matches what's installed. With a subagent tool such as [`@gotgenes/pi-subagents`](https://www.npmjs.com/package/@gotgenes/pi-subagents), it tells the agent to delegate to subagents. With only [`tmux-agents`](#tmux-agents), it points to `tmux_agent_spawn`. With neither, it tells the agent to keep reads and searches narrow instead. Sessions started by `@gotgenes/pi-subagents` count as subagents and get the tighter limits. Every threshold can be changed with an environment variable, and `PI_CONTEXT_PRESSURE=off` turns it off. See [`context-pressure/README.md`](context-pressure/README.md) for the details.
+
+---
+
 ## tmux-agents
 
 **Multiple Pi agents, one terminal.**
@@ -171,7 +189,7 @@ The parent agent drives its children through tools:
 - **Agent-to-agent messaging.** Children can message each other once the parent grants a link. Messages to the parent only raise a badge in its footer, so a child can never start work in the parent session.
 - **Auditable delivery.** Every message gets a delivery receipt that the parent can inspect.
 
-**Requires:** Linux and tmux, with the parent Pi running inside tmux. On native Windows, macOS, or outside tmux, it stays inactive and registers no tools; Windows users can run Pi in WSL. The tab menu replaces tmux's built-in window menu; start Pi with `PI_TMUX_AGENTS_MENU=off` to keep tmux's own, or `PI_TMUX_AGENTS_LAYOUT=off` to turn off automatic layout. The layout needs `node` on your `PATH`. See [`tmux-agents/README.md`](tmux-agents/README.md) for the full tool reference, delivery semantics and trust boundary.
+**Requires:** Linux and tmux, with the parent Pi running inside tmux. On native Windows, macOS, or outside tmux, it stays inactive and registers no tools; Windows users can run Pi in WSL. It also stays out of the way inside subagents from `@gotgenes/pi-subagents`, which run in their parent's process. The tab menu replaces tmux's built-in window menu; start Pi with `PI_TMUX_AGENTS_MENU=off` to keep tmux's own, or `PI_TMUX_AGENTS_LAYOUT=off` to turn off automatic layout. The layout needs `node` on your `PATH`. See [`tmux-agents/README.md`](tmux-agents/README.md) for the full tool reference, delivery semantics and trust boundary.
 
 ---
 
@@ -224,6 +242,11 @@ Alongside exporting, the extension records a few facts Pi doesn't keep on its ow
 ├── skill-read-dedupe/
 │   ├── index.ts
 │   └── README.md
+├── context-pressure/
+│   ├── index.ts           Pi wiring
+│   ├── logic.ts           the decisions, unit tested
+│   ├── test/
+│   └── README.md
 ├── tmux-agents/
 │   ├── index.ts
 │   ├── tmux-menu.sh       right-click window menu
@@ -249,7 +272,7 @@ Alongside exporting, the extension records a few facts Pi doesn't keep on its ow
 npm test
 ```
 
-The `tmux-agents` tests use your installed Pi (set `PI_TEST_PACKAGE_DIR` if it isn't under `npm root -g`) and an isolated tmux server. The `session-eval` tests need only Node.
+The `tmux-agents` tests use your installed Pi (set `PI_TEST_PACKAGE_DIR` if it isn't under `npm root -g`) and an isolated tmux server. The `session-eval` and `context-pressure` tests need only Node (22.18 or later for `context-pressure`, which runs TypeScript tests directly).
 
 ---
 

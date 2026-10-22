@@ -12,9 +12,12 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
  */
 const HEAD_POLL_INTERVAL_MS = 2_000;
 
-/** Context usage, as a percentage of the window, at which the readout turns amber and then red. */
-const CONTEXT_WARNING_PERCENT = 40;
-const CONTEXT_ERROR_PERCENT = 60;
+/**
+ * Context usage, as a percentage of the window, at which the readout turns amber and then red.
+ * They match context-pressure's defaults, where warnings start and where heavy reads are blocked.
+ */
+const CONTEXT_WARNING_PERCENT = 20;
+const CONTEXT_ERROR_PERCENT = 40;
 
 function findGitHeadPath(cwd: string): string | null {
 	let dir = resolve(cwd);

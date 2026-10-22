@@ -2,10 +2,10 @@
 
 **Extending Pi** is a mini-series I've written about the [Pi coding agent](https://pi.dev). Each part looks at a way of extending the harness, what it adds, and how it can help you in day-to-day development. The parts get steadily more complex, from a footer tweak to a team of agents in tmux, and finish with how to write your own.
 
-Install all five extensions with:
+Install all six extensions with:
 
 ```bash
-pi install git:github.com/davetoland/pi-agent-extensions@v0.1.0
+pi install git:github.com/davetoland/pi-agent-extensions@v0.1.1
 ```
 
 ---
@@ -32,7 +32,7 @@ Key takeaways:
 
 ## Extending Pi: 01 - Custom Footer (Small Tweaks, Easy Wins)
 
-Pi's footer shows tokens, cache, cost and how full the context window is. [`custom-footer`](../custom-footer) replaces it with a version that makes a few small changes: context shows as tokens used against the window (`244k/1.1M (23.2%)`) rather than only a percentage, the reading turns amber at 40% and red at 60% instead of 70% and 90%, and the git branch shown stays correct when the project folder is mounted into a Docker container, where Pi's file watcher can miss branch changes.
+Pi's footer shows tokens, cache, cost and how full the context window is. [`custom-footer`](../custom-footer) replaces it with a version that makes a few small changes: context shows as tokens used against the window (`244k/1.1M (23.2%)`) rather than only a percentage, the reading turns amber at 20% and red at 40% instead of 70% and 90%, and the git branch shown stays correct when the project folder is mounted into a Docker container, where Pi's file watcher can miss branch changes.
 
 It's the smallest extension in the series: one file, one event handler and one render function. The point isn't the features. It's how little it takes to replace part of Pi's interface with your own.
 
@@ -72,7 +72,21 @@ Key takeaways:
 
 ---
 
-## Extending Pi: 04 - Session Eval (Agent Session Evaluation)
+## Extending Pi: 04 - Context Pressure (Delegate Before It's Too Late)
+
+[`context-pressure`](../context-pressure) treats the context window as a budget. At 20% of the window, or a token cap, it adds a note to tool results telling the agent to delegate further reading and searching and to save any state it needs; the note repeats as usage climbs. At 40%, it blocks full reads of large files and cuts long tool output to its start and end. Subagents get tighter limits and are told to finish and return.
+
+Its advice matches what's installed: delegate to subagents when a subagent tool is available, spawn another agent when only tmux-agents is, and keep reads and searches narrow when neither is. The Part 1 footer turns amber and red at the same 20% and 40%.
+
+Key takeaways:
+
+✅ Treat context as a budget: warn early, and enforce a limit before it's too late.  
+✅ Steer, don't just stop: every block explains what to do instead.  
+✅ Match the advice to the setup: never point the agent at a tool it doesn't have.
+
+---
+
+## Extending Pi: 05 - Session Eval (Agent Session Evaluation)
 
 [`session-eval`](../session-eval) has two parts. The extension exports Pi sessions, including their subagents and peers, as a trace bundle, and records facts Pi doesn't, such as tool durations. The `evaluate-session` skill reads the bundle: a script measures cost, cache hit ratio, context spent by source and flags such as repeated reads, loops and risky commands, then the agent confirms each flag against the trace.
 
@@ -86,7 +100,7 @@ Key takeaways:
 
 ---
 
-## Extending Pi: 05 - tmux Agents (A Team of Agents in One Terminal)
+## Extending Pi: 06 - tmux Agents (A Team of Agents in One Terminal)
 
 [`tmux-agents`](../tmux-agents) lets one Pi agent spawn, brief and coordinate others, each a real interactive Pi in its own tmux window or pane. Agents message each other only along links the lead grants, and a message to the lead raises a badge rather than starting work in its session.
 
@@ -100,7 +114,7 @@ Key takeaways:
 
 ---
 
-## Extending Pi: 06 - Writing Your Own (Start by Asking Pi)
+## Extending Pi: 07 - Writing Your Own (Start by Asking Pi)
 
 When you ask Pi about extensions, it reads its own documentation and examples first, so describing the behaviour you want gets you a working extension. For example:
 

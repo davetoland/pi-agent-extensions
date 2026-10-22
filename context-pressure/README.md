@@ -28,6 +28,15 @@ Nested calls made by another tool, such as a codemode script, are ignored, becau
 
 **Fails open.** If an error occurs, or usage data is missing (for example straight after compaction, before the next response), the call is allowed and the result is left unchanged.
 
+## Delegation advice
+
+In a main session, the advice depends on which tools the model can call, checked on every call:
+- **A `subagent` tool**, as `@gotgenes/pi-subagents` provides: delegate further reading and searching to subagents.
+- **Only `tmux_agent_spawn`**, from tmux-agents: delegate to another agent with `tmux_agent_spawn`.
+- **Neither**: no delegation advice. The warning tells the model to keep reads and searches narrow, and blocked reads and truncated output suggest a narrower range or command.
+
+Pi ships with neither tool, so the extension never tells the model to use one that isn't there. Subagent sessions are always told to finish and return.
+
 ## Subagent detection
 
 The extension treats a session as a subagent session when its session file is `<dir>/<stem>/tasks/<child>.jsonl` and the parent transcript `<dir>/<stem>.jsonl` exists. This is the layout `@gotgenes/pi-subagents` writes. When the parent session is not saved, the package uses `<tmpdir>/pi-subagents-<uid>/…/tasks/<child>.jsonl` instead, and that layout also counts as a subagent session. If there is no session file, as with `--no-session`, the session is treated as a main session.
@@ -54,4 +63,4 @@ Invalid values fall back to the defaults. Percent values must be greater than 0 
 
 - `index.ts`: the Pi wiring. It handles the `tool_call` and `tool_result` events, resolves paths and reads file sizes.
 - `logic.ts`: the pure decision functions.
-- `test/logic.test.ts`: unit tests. Run them with `node --test test/logic.test.ts`. This needs Node 22.18 or later.
+- `test/logic.test.ts`: unit tests. Run them from the repository root with `node --test context-pressure/test/logic.test.ts`, or with `npm test`. This needs Node 22.18 or later.

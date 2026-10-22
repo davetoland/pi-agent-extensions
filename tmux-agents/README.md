@@ -6,6 +6,8 @@ Requires Linux with `/proc`, tmux, and Pi. Tested with Pi 0.85.1, tmux 3.5a, and
 
 Anywhere else (native Windows, macOS, or Linux outside tmux) the extension stays inactive: it registers no tools and changes nothing, so leaving it installed is harmless. On Windows, run Pi inside WSL, in tmux, for example from a WSL tab in Windows Terminal.
 
+It also stays inactive inside a subagent started by [`@gotgenes/pi-subagents`](https://www.npmjs.com/package/@gotgenes/pi-subagents). That package runs each subagent in its parent's Pi process with the same extensions, so the subagent would otherwise act as its parent's tmux agent: spawning into the parent's family, sending messages under the parent's name, and handling pings meant for it. In a subagent, the `tmux_agent_*` tools are removed from the model's tool set and refuse if called anyway, and no watcher, layout or menu starts. The subagent reports back to its parent, which can spawn agents itself. Agents started with `tmux_agent_spawn` are separate Pi processes, so they keep the full tool set.
+
 Install it with the rest of this repository's package (see the [main README](../README.md)), or copy this directory to `~/.pi/agent/extensions/tmux-agents/`. Use `/reload` in a running parent to enable it. Installing does not reload or control existing sessions.
 
 ## Tools

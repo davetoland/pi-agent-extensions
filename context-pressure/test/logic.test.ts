@@ -1,5 +1,5 @@
 // Unit tests for context-pressure decision logic.
-// Run: node --test /root/.pi/skill-drafts/extensions/context-pressure/test/logic.test.ts
+// Run from the repository root: node --test context-pressure/test/logic.test.ts
 // Needs Node >= 22.18 (built-in TypeScript type stripping).
 
 import assert from "node:assert/strict";
@@ -7,6 +7,7 @@ import { describe, it } from "node:test";
 import type { Block, Pressure, Usage } from "../logic.ts";
 import {
 	DEFAULTS,
+	delegationFor,
 	evaluate,
 	formatTokens,
 	isExempt,
@@ -249,6 +250,56 @@ describe("messages", () => {
 	});
 });
 
+describe("delegation", () => {
+	const withTools = (tokens: number, delegation: "subagent" | "tmux" | "none") =>
+		evaluate(usage(tokens, 400_000), false, DEFAULTS, delegation) as Pressure;
+
+	it("prefers a subagent tool, then tmux-agents, then nothing", () => {
+		assert.equal(delegationFor(["read", "subagent", "tmux_agent_spawn"]), "subagent");
+		assert.equal(delegationFor(["read", "tmux_agent_spawn"]), "tmux");
+		assert.equal(delegationFor(["read", "bash"]), "none");
+		assert.equal(delegationFor([]), "none");
+	});
+
+	it("points tmux-only sessions at tmux_agent_spawn", () => {
+		assert.match(
+			warnNote(withTools(92_000, "tmux")),
+			/Delegate further reading and searching to another agent with tmux_agent_spawn/,
+		);
+		assert.match(
+			readBlockReason(withTools(252_000, "tmux")),
+			/Delegate this read to another agent with tmux_agent_spawn, or read a narrow range/,
+		);
+		const r = truncateContent(
+			[{ type: "text", text: "x".repeat(10_000) }],
+			RESULT_MAX_BYTES,
+			withTools(252_000, "tmux"),
+		);
+		assert.ok(r);
+		assert.match(textOf(r.content), /Delegate this to another agent with tmux_agent_spawn/);
+	});
+
+	it("never mentions delegating when nothing is installed", () => {
+		const warn = warnNote(withTools(92_000, "none"));
+		const block = readBlockReason(withTools(252_000, "none"));
+		const r = truncateContent(
+			[{ type: "text", text: "x".repeat(10_000) }],
+			RESULT_MAX_BYTES,
+			withTools(252_000, "none"),
+		);
+		assert.ok(r);
+		for (const text of [warn, block, textOf(r.content)]) assert.doesNotMatch(text, /[Dd]elegate|subagent|tmux/);
+		assert.match(warn, /Keep further reads and searches narrow/);
+		assert.match(block, /Instead, read a narrow range with offset\/limit \(limit <= 200\)\.$/);
+		assert.match(textOf(r.content), /Narrow the command or range\.\]$/);
+	});
+
+	it("tells subagent sessions to return whatever is installed", () => {
+		const p = { ...(sub(160_000) as Pressure), delegation: "none" as const };
+		assert.match(warnNote(p), /return your findings now/);
+	});
+});
+
 describe("isExempt", () => {
 	for (const name of [
 		"subagent",
@@ -335,7 +386,8 @@ describe("truncateContent", () => {
 
 	it("subagent note tells it to return", () => {
 		const r = truncateContent([{ type: "text", text: "x".repeat(10_000) }], RESULT_MAX_BYTES, sub(160_000) as Pressure);
-		assert.match((r?.content.at(-1) as { text: string }).text, /Return your findings now\./);
+		assert.ok(r);
+		assert.match((r.content.at(-1) as { text: string }).text, /Return your findings now\./);
 	});
 
 	it("spans multiple text blocks and keeps non-text blocks", () => {
@@ -351,7 +403,7 @@ describe("truncateContent", () => {
 		assert.equal(r.keptBytes, RESULT_MAX_BYTES);
 		assert.ok(r.content.includes(image));
 		const all = textOf(r.content);
-		assert.ok(all.startsWith("A".repeat(3000) + "B"));
+		assert.ok(all.startsWith(`${"A".repeat(3000)}B`));
 		assert.ok(all.includes("C".repeat(1024)));
 	});
 

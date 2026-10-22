@@ -867,11 +867,51 @@ export function supportedEnvironment(
 	return platform === "linux" && Boolean(env.TMUX) && Boolean(env.TMUX_PANE);
 }
 
+/**
+ * True when the session belongs to a subagent started by `@gotgenes/pi-subagents`. That package runs each
+ * subagent inside its parent's Pi process, loading the same extensions, so the subagent shares the parent's
+ * environment and PID and would otherwise act as the parent's tmux agent. It saves subagent transcripts to
+ * `<parent dir>/<parent stem>/tasks/<child>.jsonl`, or `<tmpdir>/pi-subagents-<uid>/.../tasks/<child>.jsonl`
+ * when the parent isn't saved. `exists` checks the parent transcript for the first layout. Agents started
+ * with tmux_agent_spawn are separate Pi processes with their own top-level sessions, so they never match.
+ * context-pressure has the same check; each extension keeps its own copy so it can be installed alone.
+ */
+export function isSubagentSessionFile(sessionFile: string | undefined, exists: (path: string) => boolean): boolean {
+	if (!sessionFile) return false;
+	const parts = sessionFile.replace(/\\/g, "/").split("/");
+	if (parts.length < 4 || parts[parts.length - 2] !== "tasks" || !parts[parts.length - 1].endsWith(".jsonl")) {
+		return false;
+	}
+	if (parts.some((part) => /^pi-subagents-\d+$/.test(part))) return true;
+	return exists(`${parts.slice(0, -2).join("/")}.jsonl`);
+}
+
+const SUBAGENT_REFUSAL =
+	"tmux-agents is not available in a subagent. Report back to the agent that started you; it can spawn agents if needed.";
+
 export default function (pi: ExtensionAPI) {
 	if (!supportedEnvironment()) return;
+	// Registered first, so the handlers below can check it. In a subagent, the tools are removed from the
+	// model's tool set, refuse if called anyway, and no watcher, layout or menu starts.
+	let inSubagent = false;
+	pi.on("session_start", (_event, ctx) => {
+		inSubagent = isSubagentSessionFile(ctx.sessionManager.getSessionFile(), existsSync);
+		if (!inSubagent) return;
+		try {
+			pi.setActiveTools(pi.getActiveTools().filter((name) => !name.startsWith("tmux_agent_")));
+		} catch {
+			// The guard in agents() still refuses every call.
+		}
+	});
+	const notInSubagent = () => {
+		if (inSubagent) throw new Error(SUBAGENT_REFUSAL);
+	};
 	// Children can also spawn children. Each process has its own parent directory.
 	let manager: TmuxAgents | undefined;
-	const agents = () => (manager ??= new TmuxAgents(pi));
+	const agents = () => {
+		notInSubagent();
+		return (manager ??= new TmuxAgents(pi));
+	};
 	const result = (data: unknown) => {
 		// Large fields are bounded before serialization. JSON escaping can expand each character sixfold.
 		const text = JSON.stringify(data, null, 2);
@@ -900,7 +940,10 @@ export default function (pi: ExtensionAPI) {
 		return (familyManager ??= new TmuxAgents(pi, familyRoot));
 	};
 	// Parent-scoped tools use ownership. Peer tools use membership when it exists.
-	const peerAgents = () => (familyRoot ? family() : agents());
+	const peerAgents = () => {
+		notInSubagent();
+		return familyRoot ? family() : agents();
+	};
 	const peerName = () =>
 		familyRoot
 			? (familyName ??
@@ -1057,7 +1100,7 @@ export default function (pi: ExtensionAPI) {
 	// The parent installs the pane layout and the window menu once per process. Children inherit the tmux server's settings.
 	let menuChecked = false;
 	pi.on("session_start", async (_event, ctx) => {
-		if (menuChecked || process.env[CHILD_DIR] || !process.env.TMUX || ctx.mode !== "tui") return;
+		if (inSubagent || menuChecked || process.env[CHILD_DIR] || !process.env.TMUX || ctx.mode !== "tui") return;
 		menuChecked = true;
 		if (!optedOut(LAYOUT_OPT_OUT)) {
 			// layout.mjs runs under node, not Pi's runtime, because the tmux hooks it registers re-run it from tmux.
@@ -1101,6 +1144,8 @@ export default function (pi: ExtensionAPI) {
 	};
 	pi.on("session_start", (_event, ctx) => {
 		stopParentWatcher();
+		// A subagent shares its parent's PID, so it would find the parent's family and handle its pings.
+		if (inSubagent) return;
 		const root = existingParentDirectory();
 		if (!root) return;
 		const owner = new TmuxAgents(pi, root);
@@ -1429,7 +1474,7 @@ export default function (pi: ExtensionAPI) {
 		owned = false;
 		waiting = false;
 		const current = generation;
-		if (ctx.mode !== "tui") return;
+		if (inSubagent || ctx.mode !== "tui") return;
 		privateDirectory(childDir);
 		const check = await pi.exec(
 			"tmux",
