@@ -18,6 +18,7 @@ Everything ships as a single Pi package. Install the lot, or pick just the exten
 | [`context-pressure`](#context-pressure)                 | Push the agent to delegate as its context fills, and cut off heavy reads past a limit                   |
 | [`tmux-agents`](#tmux-agents)                           | Spawn, drive and coordinate other Pi agents in tmux windows                                             |
 | [`session-eval`](#session-eval)                         | Export sessions as trace bundles, with a skill to evaluate them                                         |
+| [`pi-living-spec`](pi-living-spec/README.md)            | Turn a clickable prototype, such as a Lovable app, into a requirements specification                    |
 
 ---
 
@@ -27,6 +28,7 @@ Everything ships as a single Pi package. Install the lot, or pick just the exten
 
 - [Pi coding agent](https://pi.dev)
 - Node.js 22.5 or later (`conditional-instructions` uses `matchesGlob` from `node:path`)
+- For `pi-living-spec` only: Playwright's Chromium browser. `pi install` installs Playwright itself; if the browser is missing, run `npx playwright install chromium` in the package's install folder.
 - For `tmux-agents` only: Linux and [tmux](https://github.com/tmux/tmux). On Windows, use WSL. Elsewhere it stays inactive.
 
 ### Install everything
@@ -38,7 +40,7 @@ pi install git:github.com/davetoland/pi-agent-extensions
 Add `-l` to install into the current project only. To pin a release, add its tag:
 
 ```bash
-pi install git:github.com/davetoland/pi-agent-extensions@v0.1.1
+pi install git:github.com/davetoland/pi-agent-extensions@v0.1.3
 ```
 
 Update or remove it with `pi update` and `pi remove`.
