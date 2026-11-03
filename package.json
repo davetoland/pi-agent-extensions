@@ -1,6 +1,6 @@
 {
 	"name": "@davetoland/pi-agent-extensions",
-	"version": "0.1.2",
+	"version": "0.1.3",
 	"description": "Custom extensions for the Pi coding agent",
 	"keywords": [
 		"pi-package"
@@ -24,12 +24,16 @@
 			"./skill-read-dedupe/index.ts",
 			"./tmux-agents/index.ts",
 			"./session-eval/index.ts",
-			"./pi-living-spec/index.ts"
+			"./pi-living-spec/src/index.ts"
 		],
 		"skills": [
 			"./session-eval/evaluate-session",
 			"./pi-living-spec/skills/living-spec"
 		]
+	},
+	"dependencies": {
+		"playwright": "^1.52.0",
+		"typescript": "^5.6.0"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-ai": "*",
