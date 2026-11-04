@@ -158,10 +158,12 @@ export function publish(root: string, publication: Publication): string[] {
   noSymlinks(root);
   const manifestPath = inside(root, ".living-spec-manifest.json");
   return locked(root + ".export.lock", () => {
-    let old: { owner: string; files: Record<string, string> } = { owner: "pi-living-spec-v2", files: {} };
+    // New manifests use OWNER. LEGACY_OWNER is the previous owner identifier, accepted only so existing manifests remain readable.
+    const OWNER = "pi-living-spec", LEGACY_OWNER = "pi-living-spec-v2";
+    let old: { owner: string; files: Record<string, string> } = { owner: OWNER, files: {} };
     if (existsSync(manifestPath)) {
       old = JSON.parse(readFileSync(manifestPath, "utf8"));
-      if (old.owner !== "pi-living-spec-v2" || !old.files || typeof old.files !== "object" || Array.isArray(old.files)) throw new Error("Invalid publication ownership manifest");
+      if ((old.owner !== OWNER && old.owner !== LEGACY_OWNER) || !old.files || typeof old.files !== "object" || Array.isArray(old.files)) throw new Error("Invalid publication ownership manifest");
     }
     for (const [name, hash] of Object.entries(old.files)) {
       const path = inside(root, name);
@@ -185,7 +187,7 @@ export function publish(root: string, publication: Publication): string[] {
     for (const [name, bytes] of [...publication.files].sort(([a], [b]) => a.localeCompare(b))) hashes[name] = digest(bytes);
     mkdirSync(root, { recursive: true });
     for (const [name, bytes] of publication.files) atomicWrite(inside(root, name), bytes);
-    atomicWrite(manifestPath, json({ owner: "pi-living-spec-v2", files: Object.fromEntries(Object.entries(hashes).sort(([a], [b]) => a.localeCompare(b))) }));
+    atomicWrite(manifestPath, json({ owner: OWNER, files: Object.fromEntries(Object.entries(hashes).sort(([a], [b]) => a.localeCompare(b))) }));
     return [...publication.files.keys()].sort().map(name => join(root, name));
   });
 }

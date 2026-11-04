@@ -37,7 +37,7 @@ function validateRecord(r: SpecRecord): void {
   }
 }
 export function validateState(s: SpecState): void {
-  checked<SpecState>(StateSchema, s, "V2 specification");
+  checked<SpecState>(StateSchema, s, "specification");
   const ids = new Set<string>();
   const all = current(s), byId = new Map(all.map(r => [r.id, r]));
   const claim = (id: string) => {
@@ -312,7 +312,7 @@ export class Ledger {
     const bytes = readFileSync(path, "utf8"), legacy = JSON.parse(bytes);
     if (legacy.version !== 1 || !Array.isArray(legacy.areas) || !Array.isArray(legacy.requirements) || !Array.isArray(legacy.entities)) throw new Error("Unsupported or malformed V1 ledger");
     return this.transaction("import-v1", who, (s, ids, notes) => {
-      if (s.records.length || s.baselines.length || s.sequence) throw new Error("V1 import requires empty V2");
+      if (s.records.length || s.baselines.length || s.sequence) throw new Error("Legacy ledger import requires an empty specification");
       const warnings = ["Legacy observation does not confirm intent. All imported records are candidates.", "Legacy removal history is unavailable. Counters cover IDs present in the source only."];
       const scope = new Map<string, string>(), entities = new Map<string, string>();
       for (const r of legacy.requirements) {

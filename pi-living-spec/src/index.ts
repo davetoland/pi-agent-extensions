@@ -1,7 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { existsSync, readFileSync } from "node:fs";
 import { Type } from "typebox";
 import { SpecBrowser, type BrowseAction, type BrowseResult, shortUrl } from "./browser.js";
-import { crawl, routeMatches } from "./crawl.js";
+import { crawl, renderApiInventory, routeMatches } from "./crawl.js";
 import { scanSource, renderSourceMap, type SourceMap } from "./source-scan.js";
 import { Workspace } from "./workspace.js";
 import { Ledger } from "./ledger.js";
@@ -21,10 +22,10 @@ export default function livingSpec(pi: ExtensionAPI) {
     return state;
   };
   const guard = (browser: SpecBrowser, ws: Workspace) => {
-    if (ws.loadConfig().writeGuard === "off") throw new Error("V2 trial refuses writeGuard=off. Set /spec-writes fake or block");
+    if (ws.loadConfig().writeGuard === "off") throw new Error("Living spec refuses writeGuard=off. Set /spec-writes fake or block");
     browser.refreshConfig();
   };
-  pi.on("session_start", async (_e, ctx) => { const counts = new Ledger(new Workspace(ctx.cwd)).counts(); if (counts.requirements) ctx.ui.setStatus("living-spec-v2", `spec: ${counts.requirements} requirements, ${counts.questions} questions`); });
+  pi.on("session_start", async (_e, ctx) => { const counts = new Ledger(new Workspace(ctx.cwd)).counts(); if (counts.requirements) ctx.ui.setStatus("living-spec", `spec: ${counts.requirements} requirements, ${counts.questions} questions`); });
   pi.on("session_shutdown", async () => { await state?.browser.close(); });
   registerModelTools(pi);
   pi.registerTool({
@@ -46,26 +47,49 @@ export default function livingSpec(pi: ExtensionAPI) {
   pi.registerTool({
     name: "spec_crawl", label: "Crawl prototype", executionMode: "sequential",
     description: "Visit reachable same-origin screens and source-map routes. Capture screenshots/outlines/API calls/errors/redirects under .living-spec/crawl. Logout links are not followed. Mutations are fake or blocked with existing auth exceptions. Captures are unapproved for publication by default. Propose records and add evidence, never overwrite confirmed intent from a new crawl.",
-    promptSnippet: "Crawl prototype screens into local evidence captures",
+    promptSnippet: "Crawl prototype screens into workspace evidence captures",
     promptGuidelines: ["After spec_crawl read every relevant outline and screenshot before proposing requirements. Keep observations separate from intended behaviour."],
-    parameters: Type.Object({ url: Type.Optional(Type.String()), maxPages: Type.Optional(Type.Number()), include: Type.Optional(Type.String()), exclude: Type.Optional(Type.String()), mobile: Type.Optional(Type.Boolean()), useSourceRoutes: Type.Optional(Type.Boolean()) }),
+    parameters: Type.Object({
+      url: Type.Optional(Type.String({ description: "Start URL. Defaults to the configured baseUrl." })),
+      maxPages: Type.Optional(Type.Number({ description: "Max screens to capture (default 40)." })),
+      include: Type.Optional(Type.String({ description: "Regex. Only crawl paths matching it." })),
+      exclude: Type.Optional(Type.String({ description: "Regex. Skip paths matching it." })),
+      mobile: Type.Optional(Type.Boolean({ description: "Also capture a 390px-wide mobile screenshot of every screen." })),
+      useSourceRoutes: Type.Optional(Type.Boolean({ description: "Seed with static routes from the source map (default true)." })),
+    }),
     async execute(_id, p, signal, onUpdate, ctx) {
       const s = get(ctx.cwd); if (p.url && !s.ws.loadConfig().baseUrl) s.ws.saveConfig({ baseUrl: p.url }); guard(s.browser, s.ws);
       const sm = p.useSourceRoutes === false ? undefined : s.ws.readJson<SourceMap | undefined>("source-map.json", undefined);
       const map = await crawl(s.browser, s.ws, { startUrl: p.url, maxPages: p.maxPages, include: p.include, exclude: p.exclude, mobile: p.mobile, seeds: sm?.routes.map(r => r.path).filter(p => p.startsWith("/")) ?? [], signal, onProgress: m => onUpdate?.({ content: text(`Crawling ${m}`), details: undefined }) });
       const unvisited = sm?.routes.filter(r => r.path !== "/*" && !map.pages.some(p => routeMatches(r.path, p.requested) || routeMatches(r.path, p.path)));
-      return { content: text(clip(JSON.stringify({ pages: map.pages.map(p => ({ path: p.requested, title: p.title, outline: p.outlineFile, redirect: p.redirectedTo, error: p.error })), unvisited, sitemap: ".living-spec/crawl/sitemap.json", api: ".living-spec/crawl/api-inventory.md" }, null, 2))), details: undefined };
+      const ext = Object.keys(map.externalLinks);
+      return { content: text(clip(JSON.stringify({ pages: map.pages.map(p => ({ path: p.requested, title: p.title, heading: p.headings[0], outline: p.outlineFile, redirect: p.redirectedTo, error: p.error, notFound: p.notFound || undefined, apiCalls: p.apiCalls.length, consoleErrors: p.consoleErrors.length || undefined, forms: p.stats.forms || undefined, dialogOpen: p.stats.dialogs ? true : undefined })), unvisited, unvisitedHint: unvisited?.length ? "Visit dynamic routes with spec_browse by clicking through from a list screen" : undefined, skipped: map.skipped.length, externalLinks: ext.length ? ext.slice(0, 20) : undefined, sitemap: ".living-spec/crawl/sitemap.json", api: ".living-spec/crawl/api-inventory.md" }, null, 2))), details: undefined };
     },
   });
   pi.registerTool({
     name: "spec_browse", label: "Browse prototype", executionMode: "sequential",
     description: "Drive the prototype using latest outline refs eN, visible text or selectors. fill/select/press/upload/scroll/wait/viewport use value. Mutating calls are intercepted under the existing guard, with auth exceptions. Capture is evidence of UI and payload shape, not proof of persistence. Screenshots are not proposed wireframes.",
-    promptSnippet: "Exercise prototype flows with guarded writes and local evidence",
+    promptSnippet: "Exercise prototype flows with guarded writes and workspace evidence",
     promptGuidelines: ["Use spec_browse end to end to exercise empty/invalid/valid forms, dialogs, tabs and menus. Refresh stale refs with snapshot.", "Treat intercepted spec_browse writes as mocked persistence. Never claim a real backend accepted them."],
-    parameters: Type.Object({ action: enumOf(actions), url: Type.Optional(Type.String()), target: Type.Optional(Type.String()), value: Type.Optional(Type.String()), screenshot: Type.Optional(Type.Boolean()), fullPage: Type.Optional(Type.Boolean()), full: Type.Optional(Type.Boolean()) }),
+    parameters: Type.Object({
+      action: enumOf(actions),
+      url: Type.Optional(Type.String({ description: "For open: absolute URL or path relative to baseUrl." })),
+      target: Type.Optional(Type.String({ description: "Element ref (e12), visible text, or Playwright selector. For wait: text to wait for." })),
+      value: Type.Optional(Type.String({ description: "fill: text. select: option label. press: key (Enter, Escape, Tab…). upload: file name e.g. photo.png or data.csv. scroll: up|down|top|bottom. wait: ms. viewport: mobile|tablet|desktop|wide|WxH" })),
+      screenshot: Type.Optional(Type.Boolean({ description: "Attach a screenshot after the action. Costs tokens, so use it when layout or visual design matters." })),
+      fullPage: Type.Optional(Type.Boolean({ description: "Screenshot the full scrollable page instead of the viewport." })),
+      full: Type.Optional(Type.Boolean({ description: "Return the full outline instead of a diff." })),
+    }),
     async execute(_id, p, _signal, _update, ctx) {
       const s = get(ctx.cwd); guard(s.browser, s.ws);
       const r = await s.browser.perform({ ...p, action: p.action as BrowseAction });
+      // Append this action's API observations to the workspace inventory, preserving earlier crawl and browse content. Evidence only, unapproved for publication.
+      if (r.events.net.length) {
+        const inventory = s.ws.path("crawl/api-inventory.md");
+        const before = existsSync(inventory) ? readFileSync(inventory, "utf8").trimEnd() : "# API inventory (observed in the browser)";
+        const section = renderApiInventory(r.events.net).replace(/^# .*\n+/, "").replace(/^## /gm, "### ");
+        s.ws.writeText("crawl/api-inventory.md", `${before}\n\n## Browse observation: ${p.action} on ${shortUrl(r.url, s.browser.origin) || r.url} at ${new Date().toISOString()}\n\n${section}`);
+      }
       const content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[] = text(clip(formatBrowse(r, s.browser.origin)));
       if (r.screenshotJpeg) content.push({ type: "image", data: r.screenshotJpeg.toString("base64"), mimeType: "image/jpeg" });
       return { content, details: { url: r.url, ok: r.ok, screenshot: r.screenshotPath }, isError: !r.ok };
@@ -85,30 +109,40 @@ export default function livingSpec(pi: ExtensionAPI) {
   pi.registerCommand("spec-clarify", { description: "Resume optional persistent clarification without crawling", handler: async (args, ctx) => {
     await ctx.waitForIdle(); pi.sendUserMessage(`/skill:spec-clarify Resume the persistent question frontier. ${args}`, { expandPromptTemplates: true });
   } });
-  pi.registerCommand("spec-status", { description: "Show V2 specification progress", handler: async (_args, ctx) => {
+  pi.registerCommand("spec-status", { description: "Show specification progress", handler: async (_args, ctx) => {
     const l = new Ledger(new Workspace(ctx.cwd)); ctx.ui.notify(JSON.stringify({ ...l.counts(), readyQuestions: l.frontier().ready.length, reviews: l.data.impacts.filter(i => !i.resolution).length, baselines: l.data.baselines.length }), "info");
   } });
   pi.registerCommand("spec-export", { description: "Publish portable specification: /spec-export [md csv json]", handler: async (args, ctx) => {
     const ws = new Workspace(ctx.cwd), formats = args.split(/\s+/).filter((f): f is "md" | "csv" | "json" => ["md", "csv", "json"].includes(f));
     ctx.ui.notify(exportAll(ws, new Ledger(ws).data, undefined, formats.length ? formats : undefined).join("\n"), "info");
   } });
-  pi.registerCommand("spec-writes", { description: "Write guard: fake or block. V2 trial refuses off", handler: async (args, ctx) => {
-    if (args.trim() !== "fake" && args.trim() !== "block") { ctx.ui.notify("Use /spec-writes fake or block. Real writes are disabled in V2 trial", "warning"); return; }
+  pi.registerCommand("spec-writes", { description: "Write guard: fake or block. Off is refused", handler: async (args, ctx) => {
+    if (args.trim() !== "fake" && args.trim() !== "block") { ctx.ui.notify("Use /spec-writes fake or block. Real writes are disabled", "warning"); return; }
     const s = get(ctx.cwd); s.ws.saveConfig({ writeGuard: args.trim() as "fake" | "block" }); s.browser.refreshConfig();
   } });
-  pi.registerCommand("spec-login", { description: "Log in through a visible browser, preserve local auth state", handler: async (args, ctx) => {
+  pi.registerCommand("spec-login", { description: "Log in through a visible browser, save auth state in the workspace", handler: async (args, ctx) => {
     if (!ctx.hasUI) throw new Error("Login requires interactive UI");
     const s = get(ctx.cwd); guard(s.browser, s.ws);
-    const path = await s.browser.interactiveLogin(args.trim(), () => ctx.ui.confirm("Log in", "Complete login in the browser, then confirm to save the session locally"));
+    const path = await s.browser.interactiveLogin(args.trim(), () => ctx.ui.confirm("Log in", "Complete login in the browser, then confirm to save the session in the workspace"));
     ctx.ui.notify(`Saved ${s.ws.rel(path)}. Never publish or commit auth state`, "info");
   } });
   pi.registerCommand("spec-close", { description: "Close prototype browser", handler: async (_args, ctx) => { await state?.browser.close(); ctx.ui.notify("Browser closed", "info"); } });
 }
 function formatBrowse(r: BrowseResult, origin?: string) {
-  const lines = [`${r.ok ? "OK" : "Failed"}: ${r.summary}${r.error ? `. ${r.error}` : ""}`, `Page: ${shortUrl(r.url, origin)} · ${r.title}`];
-  for (const e of r.events.net) lines.push(`${e.intercepted ? "INTERCEPTED, not persisted" : "Observed API"}: ${e.method} ${shortUrl(e.url, origin)} -> ${e.intercepted ?? e.status}${e.postData ? ` body=${e.postData.slice(0, 600)}` : ""}`);
+  const lines = [`${r.ok ? "OK" : "Failed"}: ${r.summary}${r.error ? `. ${r.error}` : ""}`, `Page: ${shortUrl(r.url, origin) || r.url} · ${r.title}${r.navigated ? " (navigated)" : ""}`];
+  const writes = r.events.net.filter(e => e.intercepted), reads = r.events.net.filter(e => !e.intercepted);
+  for (const e of writes) lines.push(`INTERCEPTED, not persisted: ${e.method} ${shortUrl(e.url, origin)} -> ${e.intercepted}${e.postData ? ` body=${e.postData.slice(0, 600)}` : ""}`);
+  for (const e of reads.slice(0, 25)) lines.push(`Observed API: ${e.method} ${shortUrl(e.url, origin)} -> ${e.status}${e.postData ? ` body=${e.postData.slice(0, 300)}` : ""}`);
+  if (reads.length > 25) lines.push(`Observed API: ${reads.length - 25} more`);
   if (r.snapshot?.toasts.length) lines.push(`Toasts: ${r.snapshot.toasts.join(" | ")}`);
-  lines.push(...r.events.dialogs, ...r.events.console, r.outline ?? "");
+  if (r.events.dialogs.length) lines.push(`Browser dialogs: ${r.events.dialogs.join(" | ")}`);
+  if (r.events.popups.length) lines.push(`New tabs: ${r.events.popups.join(" | ")}`);
+  if (r.events.console.length) lines.push(`Console: ${r.events.console.slice(0, 8).join(" | ")}`);
+  if (r.snapshot?.notFound) lines.push("Warning: this looks like a 404 / Not Found page.");
+  if (r.outline) {
+    lines.push("", r.outlineMode === "diff" ? "Outline changes since last step (- removed, + added):" : "Page outline:", r.outline);
+    if (r.snapshot?.truncated) lines.push("(outline truncated, scroll or use a narrower view)");
+  }
   if (r.screenshotPath) lines.push(`Screenshot: ${r.screenshotPath}`);
   return lines.join("\n");
 }
