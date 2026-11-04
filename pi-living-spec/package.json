@@ -1,6 +1,6 @@
 {
 	"name": "pi-living-spec",
-	"version": "0.1.2",
+	"version": "0.1.1",
 	"description": "Pi extension and skills for extracting, clarifying, and maintaining requirements specifications from prototypes.",
 	"type": "module",
 	"license": "MIT",
