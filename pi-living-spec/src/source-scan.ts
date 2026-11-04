@@ -319,7 +319,7 @@ export async function scanSource(repoRoot: string): Promise<SourceMap> {
 		return true;
 	});
 
-	// ---------- screens (route file + transitive local components) ----------
+	// ---------- screens (route file + transitive project components) ----------
 	const usage = new Map<string, number>();
 	const screens: SourceMap["screens"] = [];
 	for (const r of routesU) {
@@ -1140,7 +1140,7 @@ export function renderSourceMap(sm: SourceMap): string {
 		list("Server-state", f.queries);
 		list("Server functions", f.serverFns);
 		list("User feedback (toasts)", f.toasts);
-		list("Local UI state", f.state);
+		list("Component UI state", f.state);
 		list("Widgets", f.widgets);
 		list("Permission checks", f.conditions);
 		for (const m of f.mockData) L.push(`- **Hard-coded data \`${m.name}\`:** ${m.count} items, fields: ${m.fields.join(", ")}`);
