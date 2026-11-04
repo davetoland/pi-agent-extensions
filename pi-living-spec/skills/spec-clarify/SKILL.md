@@ -1,6 +1,7 @@
 ---
 name: spec-clarify
 description: Resume an optional persistent specification interview without crawling. Resolve consequential questions, record attributed answers and necessary requirement consequences, and preserve decisions and impacts.
+disable-model-invocation: true
 ---
 
 # Clarify the working specification

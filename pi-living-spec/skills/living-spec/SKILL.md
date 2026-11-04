@@ -1,6 +1,7 @@
 ---
 name: living-spec
 description: Extract candidate requirements from a prototype and its source into the connected specification. Keep prototype evidence separate from intended behaviour and proposed solutions.
+disable-model-invocation: true
 ---
 
 # Extract a working specification
