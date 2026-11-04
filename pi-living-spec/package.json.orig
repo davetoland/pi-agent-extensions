@@ -1,0 +1,60 @@
+{
+<<<<<<< HEAD
+  "name": "pi-living-spec",
+  "version": "2.0.0-alpha.1",
+  "description": "A local V2 trial for evidence-led, connected and versioned specifications in Pi.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["pi-package", "pi-extension", "requirements", "playwright"],
+  "pi": { "extensions": ["./src/index.ts"], "skills": ["./skills"] },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build:trial": "tsc -p tsconfig.test.json",
+    "test": "npm run build:trial && node --test .trial-build/test/*.test.js",
+    "example": "npm run build:trial && node .trial-build/scripts/invoice-example.js"
+  },
+  "dependencies": { "playwright": "^1.52.0", "typescript": "^5.6.0" },
+  "peerDependencies": { "@earendil-works/pi-ai": "*", "@earendil-works/pi-coding-agent": "*", "typebox": "*" },
+  "files": ["src", "skills", "scripts", "test", "tsconfig.json", "tsconfig.test.json", "README.md", "DESIGN.md", "CHANGELOG.md"]
+=======
+	"name": "pi-living-spec",
+	"version": "2.0.0",
+	"description": "Pi extension and skills for extracting, clarifying, and maintaining requirements specifications from prototypes.",
+	"type": "module",
+	"license": "MIT",
+	"keywords": [
+		"pi-package",
+		"pi-extension",
+		"requirements",
+		"playwright"
+	],
+	"pi": {
+		"extensions": [
+			"./src/index.ts"
+		],
+		"skills": [
+			"./skills"
+		]
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit -p tsconfig.json"
+	},
+	"dependencies": {
+		"playwright": "^1.52.0",
+		"typescript": "^5.6.0"
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": "*",
+		"typebox": "*"
+	},
+	"files": [
+		"src",
+		"skills",
+		"tsconfig.json",
+		"README.md",
+		"DESIGN.md",
+		"CHANGELOG.md"
+	]
+>>>>>>> b600292 (Update pi-living-spec)
+}
