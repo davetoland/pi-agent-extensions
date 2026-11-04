@@ -1,273 +1,197 @@
-import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
-import { routeMatches, type Sitemap } from "./crawl.js";
-import type { Entity, LedgerData, Requirement } from "./ledger.js";
-import type { SourceMap } from "./source-scan.js";
-import type { SpecConfig, Workspace } from "./workspace.js";
+import { existsSync, lstatSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname, join, posix, relative, resolve, sep } from "node:path";
+import type { Workspace, SpecConfig } from "./workspace.js";
+import type { SpecRecord, SpecState } from "./schema.js";
+import { archivedBytes, atomicWrite, digest, inside, json, locked, noSymlinks } from "./storage.js";
+import { validateState } from "./ledger.js";
+const escape = (v: unknown) => String(v ?? "").replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!);
+const label = (v: string) => escape(v).replace(/[\[\]`*]/g, "").replace(/\n/g, " ");
+const anchor = (id: string) => id.toLowerCase();
+const link = (from: string, to: string) => posix.relative(posix.dirname(from), to) || posix.basename(to);
+const ordered = (rows: SpecRecord[]) => [...rows].sort((a, b) => a.id.localeCompare(b.id));
+export interface Publication { files: Map<string, string | Buffer>; reports: string[]; permittedAssets?: string[] }
 
-const KIND_LABEL: Record<string, string> = {
-	functional: "Functional",
-	ui: "UI / UX",
-	data: "Data",
-	integration: "Integration",
-	auth: "Auth & permissions",
-	"business-rule": "Business rule",
-	nfr: "Non-functional",
-	question: "Question",
-};
-const STATUS_BADGE: Record<string, string> = {
-	observed: "✅ observed",
-	inferred: "🔎 inferred",
-	mocked: "🧪 mocked in prototype",
-	assumed: "❓ assumed",
-};
-
-function esc(s: string): string {
-	return s.replace(/\|/g, "\\|").replace(/\n/g, " ");
+export function renderPublication(ws: Workspace, state: SpecState, formats: ("md" | "csv" | "json")[] = ["md", "csv", "json"]): Publication {
+  validateState(state);
+  const files = new Map<string, string | Buffer>(), reports = new Set<string>();
+  const rows = ordered(state.records.map(r => r.revisions.at(-1)!));
+  const locations = (records: SpecRecord[], prefix = "") => new Map(records.map(r => [r.id, prefix + (r.type === "requirement" ? `areas/${r.home ?? "unscoped"}.md` : `records/${r.id}.md`)]));
+  const loc = locations(rows);
+  const currentRevs = new Map(rows.map(r => [r.id, r.revision]));
+  const revisionCount = new Map(state.records.map(r => [r.id, r.revisions.length]));
+  // Current publication permission: the latest, non-retired revision of the same record approved these exact bytes.
+  const permitted = new Set(rows.filter(r => !r.retired).flatMap(r => r.archives.filter(a => a.availability === "archived").map(a => `${r.id}\0${a.hash}`)));
+  const reference = (id: string, from: string, map = loc) => {
+    const target = map.get(id);
+    if (!target) { reports.add(`${from}: unresolved ID ${id}`); return `${id} (unresolved)`; }
+    return `[${id}](${link(from, target)}#${anchor(id)})`;
+  };
+  function prose(raw: string | undefined, from: string, map: Map<string, string>) {
+    if (!raw) return "";
+    let value = escape(raw);
+    value = value.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_whole, text: string, target: string) => {
+      if (/^https?:\/\//i.test(target)) { reports.add(`${from}: external prose link ${target} is not frozen`); return `[${label(text)}](${target})`; }
+      if (map.has(target)) return reference(target, from, map);
+      reports.add(`${from}: prose link not packaged: ${target}`);
+      return `${label(text)} (reference not packaged: ${label(target)})`;
+    });
+    value = value.replace(/(?<![\w/#\[-])\b([A-Z][A-Z0-9]*-\d{3,})\b(?![\w\]])/g, (_m, id) => reference(id, from, map));
+    return value;
+  }
+  const revisionReference = (id: string, revision: number, from: string, map: Map<string, string>, revs: Map<string, number>) => {
+    if (revs.get(id) === revision) return `${reference(id, from, map)} revision ${revision}`;
+    if (revision < (revisionCount.get(id) ?? 0)) return `[${id} revision ${revision}](${link(from, `history/${id}.md`)}#${anchor(id)}-r${revision})`;
+    if (revision === revisionCount.get(id)) return `${reference(id, from, loc)} revision ${revision}`;
+    reports.add(`${from}: unresolved revision ${id}@${revision}`); return `${id} revision ${revision} (unresolved)`;
+  };
+  function record(r: SpecRecord, from: string, map: Map<string, string>, frozen = false, revs: Map<string, number> = currentRevs): string {
+    const p = (s: string | undefined) => prose(s, from, map);
+    const lines = [`<a id="${anchor(r.id)}"></a>`, `## ${r.id} · ${label(r.title)}`, "", `${frozen ? "Frozen" : "Current"} revision ${r.revision}. ${r.type}. ${r.perspective}. Intent ${r.intent}. Evidence ${r.status}. Priority ${r.priority}.${r.retired ? " Retired." : ""}`, "", p(r.statement), ""];
+    if (r.home) lines.push(`Scope home: ${reference(r.home, from, map)}`, "");
+    if (r.representation) lines.push(`Representation: ${r.representation}`, "");
+    if (r.confirmation) lines.push(`Confirmed revision ${r.confirmation.revision} by ${label(r.confirmation.contributor)} on ${label(r.confirmation.date)}. Source: ${p(r.confirmation.source)}`, "");
+    for (const [heading, value] of [["Rationale", r.rationale], ["Notes", r.notes], ["Working assumption", r.assumption], ["Contract", r.contract]] as const) if (value) lines.push(`### ${heading}`, "", p(value), "");
+    for (const [heading, values] of [["Acceptance criteria", r.acceptance], ["Options", r.options], ["Alternatives", r.alternatives], ["Consequences", r.consequences], ["Journey steps", r.steps], ["Responsibilities", r.responsibilities], ["Exclusions", r.exclusions], ["Success measures", r.successMeasures], ["Entity rules", r.rules]] as const) if (values?.length) lines.push(`### ${heading}`, "", ...values.map(s => `- ${p(s)}`), "");
+    if (r.route) lines.push(`Route: ${label(r.route)}`, "");
+    if (r.links?.length) lines.push("### Links", "", ...r.links.map(l => `- ${l.type}: ${reference(l.to, from, map)}${l.rationale ? `. ${p(l.rationale)}` : ""}`), "");
+    if (r.type === "question") {
+      lines.push(`Question state: ${r.questionState}`, "");
+      if (r.deferral) lines.push(`Deferral reason: ${p(r.deferral.reason)}`, `Resume condition: ${p(r.deferral.condition)}`, "");
+      for (const [i, a] of r.answers.entries()) lines.push(`### Answer ${i + 1}`, "", p(a.text), "", `By ${label(a.contributor)} on ${label(a.date)}. Source: ${p(a.source)}`, `Rationale: ${p(a.rationale)}`, `Remaining uncertainty: ${a.remainingUncertainty.map(p).join(". ") || "None recorded"}`, `Affected: ${a.affectedIds.map(id => reference(id, from, map)).join(", ") || "None recorded"}`, "");
+    }
+    if (r.fields?.length) lines.push("### Entity fields", "", ...r.fields.map(f => `- ${label(f.name)}: ${label(f.type)}${f.required ? " (required)" : ""}${f.notes ? `. ${p(f.notes)}` : ""}`), "");
+    if (r.relations?.length) lines.push("### Entity relations", "", ...r.relations.map(l => `- ${l.kind}: ${reference(l.to, from, map)}${l.via ? ` via ${label(l.via)}` : ""}${l.notes ? `. ${p(l.notes)}` : ""}`), "");
+    if (r.estimate) {
+      const e = r.estimate;
+      lines.push("### Estimate", "", `${e.low}–${e.high} ${label(e.unit)}. Basis: ${p(e.basis)}`, `Applies to: ${e.appliesTo.map(a => revisionReference(a.id, a.revision, from, map, revs)).join(", ")}`, `Assumptions: ${e.assumptions.map(p).join(". ") || "None recorded"}`, `Exclusions: ${e.exclusions.map(p).join(". ") || "None recorded"}`, "No automatic totals. Count this shared work package once.", "");
+    }
+    if (r.archives.length) {
+      lines.push("### Evidence citations", "");
+      for (const a of r.archives) {
+        const withheld = a.availability === "archived" && !permitted.has(`${r.id}\0${a.hash}`);
+        const data = withheld ? undefined : archivedBytes(ws.root, a);
+        if (withheld) {
+          reports.add(`${r.id}@${r.revision}: ${a.reference}: withheld, no current publication approval for these bytes`);
+          lines.push(`- ${label(a.reference)} · archived SHA-256 ${a.hash} · Withheld. Publication approval is not current`);
+        } else if (data) {
+          const asset = `assets/${a.hash}${a.extension}`;
+          files.set(asset, data);
+          lines.push(`- [${label(a.reference)}](${link(from, asset)}) · archived SHA-256 ${a.hash}`);
+        } else {
+          const reason = a.availability === "archived" ? "Archived bytes unavailable" : a.reason ?? a.availability;
+          reports.add(`${r.id}@${r.revision}: ${a.reference}: ${reason}`);
+          lines.push(`- ${label(a.reference)} · ${label(reason)}`);
+        }
+      }
+      lines.push("");
+    }
+    lines.push(`Revision attribution: ${label(r.attribution.contributor)}, ${label(r.attribution.date)}, ${p(r.attribution.source)}`, "");
+    return lines.join("\n");
+  }
+  if (formats.includes("md")) {
+    const readme = ["# " + label(state.project.name || "Working specification"), "", "Current working specification. Generated from schema version 2. Edit records through the tools, not these files.", "", escape(state.project.summary || ""), "", "Prototype evidence, intended requirements, and proposed solutions have separate labels. Completeness does not establish contractual authority.", ""];
+    if (state.project.users?.length) readme.push("Users: " + state.project.users.map(label).join(", "), "");
+    if (state.project.goals?.length) readme.push("Goals:", ...state.project.goals.map(g => `- ${escape(g)}`), "");
+    const scopes = rows.filter(r => r.type === "scope");
+    readme.push("## Requirement areas", "");
+    const homes = [...new Set(rows.filter(r => r.type === "requirement").map(r => r.home ?? "unscoped"))].sort();
+    const moved = new Map<string, SpecRecord[]>();
+    for (const h of state.records) {
+      const now = h.revisions.at(-1)!; if (now.type !== "requirement") continue;
+      for (const home of new Set(h.revisions.map(x => x.home ?? "unscoped"))) if (home !== (now.home ?? "unscoped")) moved.set(home, [...(moved.get(home) ?? []), now]);
+    }
+    const movedSection = (home: string, path: string) => {
+      const list = ordered(moved.get(home) ?? []); if (!list.length) return [];
+      return ["## Relocated requirements", "", "These requirements were previously homed in this area. Their definitive detail is at the linked location.", "", ...list.map(r => [`<a id="${anchor(r.id)}"></a>`, `- ${r.id} relocated to ${reference(r.id, path)}.${revisionCount.get(r.id)! > 1 ? ` [Revision history](${link(path, `history/${r.id}.md`)})` : ""}`, ""].join("\n"))];
+    };
+    for (const home of [...moved.keys()].filter(h => !homes.includes(h)).sort()) {
+      const scope = scopes.find(r => r.id === home), path = `areas/${home}.md`;
+      files.set(path, [`# ${home}${scope ? ` · ${label(scope.title)}` : ""}`, "", "[Specification index](../README.md)", "", "No current requirements.", "", ...movedSection(home, path)].join("\n"));
+    }
+    for (const home of homes) {
+      const scope = scopes.find(r => r.id === home), path = `areas/${home}.md`;
+      const reqs = rows.filter(r => r.type === "requirement" && (r.home ?? "unscoped") === home);
+      readme.push(`- [${home}${scope ? ` · ${label(scope.title)}` : ""}](${path}): ${reqs.length} requirements`);
+      files.set(path, [`# ${home}${scope ? ` · ${label(scope.title)}` : ""}`, "", "[Specification index](../README.md)", "", ...reqs.map(r => `- ${reference(r.id, path)} · ${label(r.title)} · revision ${r.revision}`), "", ...reqs.map(r => record(r, path, loc)), ...movedSection(home, path)].join("\n"));
+    }
+    const former = [...moved.keys()].filter(h => !homes.includes(h)).sort();
+    if (former.length) readme.push(`- Former areas with relocated requirements only: ${former.map(h => `[${h}](areas/${h}.md)`).join(", ")}`);
+    const groups = { "Scope and goals": ["scope", "goal", "constraint"], "People and journeys": ["persona", "journey"], "Screens and solution": ["screen", "component", "interface"], "Data": ["entity"], "Delivery": ["work-package"], "Questions": ["question"], "Decisions": ["decision"] };
+    for (const [heading, types] of Object.entries(groups)) {
+      const subset = rows.filter(r => types.includes(r.type)); if (!subset.length) continue;
+      readme.push("", `## ${heading}`, "", ...subset.map(r => `- ${reference(r.id, "README.md")} · ${label(r.title)} · ${r.type === "question" ? r.questionState : r.intent}`));
+      for (const r of subset) files.set(loc.get(r.id)!, `# ${r.id}\n\n[Specification index](../README.md)\n\n${record(r, loc.get(r.id)!, loc)}`);
+    }
+    if (state.impacts.length) {
+      readme.push("", "## Review queue", "", "[Review causes and resolutions](reviews.md)");
+      files.set("reviews.md", ["# Review queue", "", "[Specification index](README.md)", "", ...state.impacts.map(i => `- ${i.id}: ${reference(i.target, "reviews.md")} affected by ${reference(i.cause, "reviews.md")} revision ${i.causeRevision}. ${escape(i.reason)}. ${i.resolution ? `${i.resolution.outcome}: ${escape(i.resolution.reason)} (${label(i.resolution.attribution.contributor)}, ${label(i.resolution.attribution.date)}, ${label(i.resolution.attribution.source)})` : "Review needed"}`)].join("\n") + "\n");
+    }
+    const history = state.records.filter(r => r.revisions.length > 1);
+    if (history.length) {
+      readme.push("", "## History", "", ...history.map(r => `- [${r.id} revision history](history/${r.id}.md)`));
+      for (const h of history) files.set(`history/${h.id}.md`, [`# ${h.id} revision history`, "", "Links outside this page lead to current definitions, except estimate applicability links, which lead to the exact revision. Baselines contain frozen linked definitions.", "", ...h.revisions.map(r => record(r, `history/${h.id}.md`, loc, true).replace(`id="${anchor(r.id)}"`, `id="${anchor(r.id)}-r${r.revision}"`))].join("\n"));
+    }
+    if (state.baselines.length) {
+      readme.push("", "## Fixed baselines", "");
+      for (const b of state.baselines) {
+        const path = `baselines/${b.id}.md`;
+        const map = new Map(b.records.map(x => [x.record.id, path]));
+        readme.push(`- [${b.id} · ${label(b.name)}](${path}) · ${b.state}`);
+        const revs = new Map(b.records.map(x => [x.record.id, x.record.revision]));
+        files.set(path, [`# ${b.id} · ${label(b.name)}`, "", "[Current specification](../README.md)", "", `State: ${b.state}. Purpose: ${escape(b.purpose)}`, "No contractual authority is inferred from this snapshot.", "", `Project context: ${escape(json(b.project))}`, `Captured by ${label(b.attribution.contributor)} on ${label(b.attribution.date)}. Source: ${label(b.attribution.source)}`, "", "## Approval attribution", "", ...b.approvers.map(a => `- ${label(a.contributor)}. Authority: ${label(a.authority)}. Date: ${label(a.date)}. Source: ${label(a.source)}`), "", `Acceptance arrangements: ${escape(b.acceptanceArrangements)}`, ...(["responsibilities", "dependencies", "exclusions", "assumptions"] as const).map(k => `${k}: ${b[k].map(escape).join(". ") || "None recorded"}`), "", "## Included revisions", "", ...b.records.map(x => `- ${reference(x.record.id, path, map)} revision ${x.record.revision} · ${x.role}`), "", ...b.records.map(x => record(x.record, path, map, true, revs))].join("\n"));
+      }
+    }
+    readme.push("", "## Publication report", "", "[Unavailable evidence and unresolved prose references](publication-report.md)", "");
+    files.set("README.md", readme.join("\n"));
+    files.set("publication-report.md", ["# Publication report", "", "Only allowlisted evidence whose exact bytes are approved by the current, non-retired revision of the citing record is packaged. Historical and baseline citations to other bytes are withheld. Copies distributed earlier cannot be recalled. Review captures for personal data and secrets before approving publication.", "", ...[...reports].sort().map(r => `- ${escape(r)}`), ...(!reports.size ? ["No unavailable references reported."] : [])].join("\n") + "\n");
+  }
+  if (formats.includes("json")) files.set("specification.json", json(state));
+  if (formats.includes("csv")) {
+    const cell = (v: unknown) => `"${(typeof v === "string" ? v : JSON.stringify(v) ?? "").replace(/"/g, '""')}"`;
+    const keys = ["id", "revision", "home", "title", "statement", "acceptance", "status", "priority", "perspective", "intent", "confirmation", "rationale", "assumption", "links", "evidence"] as const;
+    files.set("requirements.csv", [keys.join(","), ...rows.filter(r => r.type === "requirement").map(r => keys.map(k => cell(r[k])).join(","))].join("\r\n") + "\r\n");
+  }
+  const permittedAssets = [...new Set(rows.filter(r => !r.retired).flatMap(r => r.archives.filter(a => a.availability === "archived").map(a => `assets/${a.hash}${a.extension}`)))].sort();
+  return { files, reports: [...reports].sort(), permittedAssets };
 }
-
-function gitInfo(repo?: string): string | undefined {
-	if (!repo) return undefined;
-	try {
-		const sha = execFileSync("git", ["-C", repo, "rev-parse", "--short", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-		const date = execFileSync("git", ["-C", repo, "log", "-1", "--format=%cs"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-		return `commit ${sha} (${date})`;
-	} catch {
-		return undefined;
-	}
+export function publish(root: string, publication: Publication): string[] {
+  noSymlinks(root);
+  const manifestPath = inside(root, ".living-spec-manifest.json");
+  return locked(root + ".export.lock", () => {
+    let old: { owner: string; files: Record<string, string> } = { owner: "pi-living-spec-v2", files: {} };
+    if (existsSync(manifestPath)) {
+      old = JSON.parse(readFileSync(manifestPath, "utf8"));
+      if (old.owner !== "pi-living-spec-v2" || !old.files || typeof old.files !== "object" || Array.isArray(old.files)) throw new Error("Invalid publication ownership manifest");
+    }
+    for (const [name, hash] of Object.entries(old.files)) {
+      const path = inside(root, name);
+      if (existsSync(path) && (!lstatSync(path).isFile() || digest(readFileSync(path)) !== hash)) throw new Error(`Human-edited publication file: ${path}`);
+    }
+    const revoked = Object.keys(old.files).filter(name => name.startsWith("assets/") && !publication.files.has(name) && !(publication.permittedAssets ?? []).includes(name) && existsSync(inside(root, name))).sort();
+    if (revoked.length) throw new Error(`Output directory contains previously packaged evidence that is no longer approved for publication: ${revoked.join(", ")}. Nothing was written or deleted. Publish to a fresh output directory and dispose of the old one deliberately`);
+    for (const name of publication.files.keys()) {
+      const path = inside(root, name);
+      if (existsSync(path) && !Object.hasOwn(old.files, name)) throw new Error(`Unowned output exists: ${path}`);
+      let parent = dirname(path);
+      while (parent.startsWith(resolve(root))) {
+        if (existsSync(parent) && !lstatSync(parent).isDirectory()) throw new Error(`Output parent is not a directory: ${parent}`);
+        if (parent === dirname(parent)) break; parent = dirname(parent);
+      }
+    }
+    const retained = Object.keys(old.files).filter(name => !publication.files.has(name) && existsSync(inside(root, name))).sort();
+    const report = publication.files.get("publication-report.md");
+    if (retained.length && typeof report === "string") publication = { ...publication, files: new Map(publication.files).set("publication-report.md", `${report}\n## Files retained from earlier exports\n\nNot regenerated by this export and not deleted. They may describe superseded content.\n\n${retained.map(n => `- ${escape(n)}`).join("\n")}\n`) };
+    const hashes = { ...old.files };
+    for (const [name, bytes] of [...publication.files].sort(([a], [b]) => a.localeCompare(b))) hashes[name] = digest(bytes);
+    mkdirSync(root, { recursive: true });
+    for (const [name, bytes] of publication.files) atomicWrite(inside(root, name), bytes);
+    atomicWrite(manifestPath, json({ owner: "pi-living-spec-v2", files: Object.fromEntries(Object.entries(hashes).sort(([a], [b]) => a.localeCompare(b))) }));
+    return [...publication.files.keys()].sort().map(name => join(root, name));
+  });
 }
-
-function mermaidName(s: string): string {
-	return s.replace(/[^A-Za-z0-9_]/g, "_");
-}
-
-function erDiagram(entities: Entity[]): string {
-	if (!entities.length) return "";
-	const L = ["```mermaid", "erDiagram"];
-	for (const e of entities) {
-		L.push(`  ${mermaidName(e.name)} {`);
-		for (const f of e.fields.slice(0, 25)) {
-			const type = f.type.match(/^[A-Za-z_][A-Za-z0-9_]*/)?.[0] ?? "string";
-			L.push(`    ${type} ${mermaidName(f.name)}${f.required ? ' "required"' : ""}`);
-		}
-		L.push("  }");
-	}
-	const card: Record<string, string> = {
-		"one-to-one": "||--||",
-		"one-to-many": "||--o{",
-		"many-to-one": "}o--||",
-		"many-to-many": "}o--o{",
-	};
-	const drawn = new Set<string>();
-	for (const e of entities) {
-		for (const r of e.relations) {
-			if (!entities.some((x) => x.name.toLowerCase() === r.to.toLowerCase())) continue;
-			const pair = [e.name.toLowerCase(), r.to.toLowerCase()].sort().join("|") + (r.via ?? "");
-			if (drawn.has(pair)) continue;
-			drawn.add(pair);
-			L.push(`  ${mermaidName(e.name)} ${card[r.kind] ?? "||--o{"} ${mermaidName(r.to)} : "${(r.via ?? r.kind).replace(/"/g, "'")}"`);
-		}
-	}
-	L.push("```");
-	return L.join("\n");
-}
-
-function reqBlock(r: Requirement): string[] {
-	const L = [`#### ${r.id} — ${r.title}`, "", `_${KIND_LABEL[r.kind] ?? r.kind} · priority: ${r.priority} · ${STATUS_BADGE[r.status] ?? r.status}_`, "", r.statement, ""];
-	if (r.acceptance.length) {
-		L.push("**Acceptance criteria**", "");
-		for (const a of r.acceptance) L.push(`- ${a}`);
-		L.push("");
-	}
-	if (r.assumption) L.push(`**Working assumption:** ${r.assumption}`, "");
-	if (r.notes) L.push(`**Notes:** ${r.notes}`, "");
-	if (r.related?.length) L.push(`**Related:** ${r.related.join(", ")}`, "");
-	if (r.evidence.length) L.push(`<sub>Evidence: ${r.evidence.map((e) => `\`${e}\``).join(", ")}</sub>`, "");
-	return L;
-}
-
-export function renderMarkdown(
-	ledger: LedgerData,
-	opts: { config: SpecConfig; sitemap?: Sitemap; sourceMap?: SourceMap; link?: (cwdRelPath: string) => string },
-): string {
-	const { config, sitemap, sourceMap } = opts;
-	const reqs = ledger.requirements.filter((r) => r.kind !== "question");
-	const questions = ledger.requirements.filter((r) => r.kind === "question");
-	const name = ledger.project?.name ?? config.projectName ?? sourceMap?.product.title ?? "Product";
-	const L: string[] = [];
-	let sec = 0;
-	const h2 = (title: string) => `## ${++sec}. ${title}`;
-
-	L.push(`# ${name} — Requirements Specification`, "");
-	L.push(`_Derived from the prototype ("living spec") on ${new Date().toISOString().slice(0, 10)}._`, "");
-	L.push("| Source | Reference |", "|---|---|");
-	if (config.baseUrl) L.push(`| Prototype URL | ${config.baseUrl} |`);
-	if (config.repoPath) L.push(`| Prototype source | \`${config.repoPath}\`${gitInfo(sourceMap?.repo) ? ` @ ${gitInfo(sourceMap?.repo)}` : ""} |`);
-	if (sitemap) L.push(`| Screens crawled | ${sitemap.pages.length} (${sitemap.crawledAt.slice(0, 10)}) |`);
-	L.push("");
-	L.push(
-		"**How to read this document.** Each requirement carries a status: ✅ _observed_ – seen working in the prototype; 🔎 _inferred_ – implied by the prototype's code, data or UI but not demonstrably working; 🧪 _mocked_ – the prototype shows the UI but fakes the behaviour (hard-coded data, no-op buttons), so the real behaviour must be built and confirmed; ❓ _assumed_ – our assumption, to be confirmed by the client. The prototype is the reference for **what** the product does, not **how** it must be built.",
-		"",
-	);
-
-	// Overview
-	if (ledger.project?.summary || ledger.project?.users?.length || ledger.project?.goals?.length) {
-		L.push(h2("Overview"), "");
-		if (ledger.project.summary) L.push(ledger.project.summary, "");
-		if (ledger.project.users?.length) {
-			L.push("**User roles**", "");
-			for (const u of ledger.project.users) L.push(`- ${u}`);
-			L.push("");
-		}
-		if (ledger.project.goals?.length) {
-			L.push("**Goals**", "");
-			for (const g of ledger.project.goals) L.push(`- ${g}`);
-			L.push("");
-		}
-	}
-
-	const c = {
-		total: reqs.length,
-		byStatus: Object.fromEntries(["observed", "inferred", "mocked", "assumed"].map((s) => [s, reqs.filter((r) => r.status === s).length])),
-		byPriority: Object.fromEntries(["must", "should", "could", "wont", "unknown"].map((p) => [p, reqs.filter((r) => r.priority === p).length])),
-	};
-	L.push(h2("Summary"), "");
-	L.push(`${c.total} requirements across ${ledger.areas.length} feature areas, ${ledger.entities.length} data entities, ${questions.length} open questions.`, "");
-	L.push("| Area | Requirements | Must | Mocked in prototype |", "|---|---|---|---|");
-	const areas = [...ledger.areas].sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
-	for (const a of areas) {
-		const rs = reqs.filter((r) => r.area === a.code);
-		L.push(`| ${a.code} — ${a.name} | ${rs.length} | ${rs.filter((r) => r.priority === "must").length} | ${rs.filter((r) => r.status === "mocked").length} |`);
-	}
-	L.push("");
-
-	// Screens
-	const screenRows: { path: string; title: string; shot?: string; notes: string }[] = [];
-	if (sitemap) {
-		for (const p of sitemap.pages) {
-			screenRows.push({
-				path: p.requested,
-				title: p.headings[0]?.replace(/^h\d: /, "") || p.title || "",
-				shot: p.screenshot,
-				notes: [p.redirectedTo ? `redirects to ${p.redirectedTo}` : "", p.notFound ? "404" : "", p.error ? `error: ${p.error}` : ""].filter(Boolean).join("; "),
-			});
-		}
-	}
-	if (sourceMap) {
-		for (const r of sourceMap.routes) {
-			if (r.path === "/*") continue;
-			if (!screenRows.some((s) => routeMatches(r.path, s.path))) screenRows.push({ path: r.path, title: r.component ?? "", notes: `not crawled${r.guards.length ? `; guarded by ${r.guards.join(", ")}` : ""}` });
-		}
-	}
-	if (screenRows.length) {
-		L.push(h2("Screen inventory"), "", "| Route | Screen | Requirements | Notes |", "|---|---|---|---|");
-		for (const s of screenRows) {
-			const ids = reqs.filter((r) => r.evidence.some((e) => e === s.path || e.startsWith(`${s.path} `) || e.startsWith(`route:${s.path}`) || e.includes(`${s.path}#`) || e === `route ${s.path}`)).map((r) => r.id);
-			const shot = s.shot ? ` [screenshot](${opts.link ? opts.link(s.shot) : s.shot})` : "";
-			L.push(`| \`${s.path}\` | ${esc(s.title)}${shot} | ${ids.join(", ")} | ${esc(s.notes)} |`);
-		}
-		L.push("");
-	}
-
-	// Requirements by area
-	L.push(h2("Requirements by feature area"), "");
-	const reqSec = sec;
-	const known = new Set(areas.map((a) => a.code));
-	const orphanAreas = [...new Set(reqs.map((r) => r.area).filter((a) => !known.has(a)))].map((code) => ({ code, name: code, description: undefined as string | undefined }));
-	let n = 0;
-	for (const a of [...areas, ...orphanAreas]) {
-		const rs = reqs.filter((r) => r.area === a.code && r.kind !== "nfr");
-		if (!rs.length) continue;
-		n++;
-		L.push(`### ${reqSec}.${n} ${a.name} (${a.code})`, "");
-		if (a.description) L.push(a.description, "");
-		const order = ["functional", "business-rule", "auth", "ui", "data", "integration"];
-		rs.sort((x, y) => order.indexOf(x.kind) - order.indexOf(y.kind) || x.id.localeCompare(y.id, undefined, { numeric: true }));
-		for (const r of rs) L.push(...reqBlock(r));
-	}
-
-	// Data model
-	L.push(h2("Data model"), "");
-	if (!ledger.entities.length) L.push("_No entities recorded yet._", "");
-	else {
-		L.push(erDiagram(ledger.entities), "");
-		for (const e of ledger.entities) {
-			L.push(`### ${e.name}  _(${STATUS_BADGE[e.status] ?? e.status})_`, "");
-			if (e.description) L.push(e.description, "");
-			L.push("| Field | Type | Required | Notes |", "|---|---|---|---|");
-			for (const f of e.fields) L.push(`| ${esc(f.name)} | ${esc(f.type)} | ${f.required ? "yes" : ""} | ${esc(f.notes ?? "")} |`);
-			L.push("");
-			if (e.relations.length) {
-				L.push("Relationships:", "");
-				for (const r of e.relations) L.push(`- ${r.kind} → **${r.to}**${r.via ? ` via \`${r.via}\`` : ""}${r.notes ? ` — ${r.notes}` : ""}`);
-				L.push("");
-			}
-			if (e.rules.length) {
-				L.push("Rules:", "");
-				for (const r of e.rules) L.push(`- ${r}`);
-				L.push("");
-			}
-			if (e.evidence.length) L.push(`<sub>Evidence: ${e.evidence.map((x) => `\`${x}\``).join(", ")}</sub>`, "");
-		}
-	}
-
-	// NFRs
-	const nfr = reqs.filter((r) => r.kind === "nfr");
-	L.push(h2("Non-functional requirements"), "");
-	if (!nfr.length) L.push("_None recorded._", "");
-	for (const r of nfr) L.push(...reqBlock(r));
-
-	// Gaps
-	const mocked = reqs.filter((r) => r.status === "mocked");
-	L.push(h2("Prototype gaps (mocked behaviour that must be built for real)"), "");
-	if (!mocked.length) L.push("_None recorded._", "");
-	else {
-		L.push("| ID | Requirement | What the prototype does |", "|---|---|---|");
-		for (const r of mocked) L.push(`| ${r.id} | ${esc(r.title)} | ${esc(r.notes ?? "UI only / faked")} |`);
-		L.push("");
-	}
-
-	// Questions
-	L.push(h2("Open questions for the client"), "");
-	if (!questions.length) L.push("_None._", "");
-	else {
-		L.push("| ID | Area | Question | Working assumption | Blocks |", "|---|---|---|---|---|");
-		for (const q of questions) L.push(`| ${q.id} | ${q.area} | ${esc(q.statement)} | ${esc(q.assumption ?? "")} | ${(q.related ?? []).join(", ")} |`);
-		L.push("");
-	}
-
-	// Traceability
-	L.push(h2("Traceability"), "", "| Requirement | Evidence |", "|---|---|");
-	for (const r of reqs) L.push(`| ${r.id} | ${esc(r.evidence.join(", "))} |`);
-	L.push("");
-	return L.join("\n");
-}
-
-export function renderCsv(ledger: LedgerData): string {
-	const cols = ["id", "area", "kind", "title", "statement", "acceptance", "priority", "status", "evidence", "assumption", "notes"];
-	const cell = (v: unknown) => {
-		const s = Array.isArray(v) ? v.join(" | ") : v === undefined || v === null ? "" : String(v);
-		return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-	};
-	const rows = ledger.requirements.map((r) => cols.map((c) => cell((r as unknown as Record<string, unknown>)[c])).join(","));
-	return `${cols.join(",")}\n${rows.join("\n")}\n`;
-}
-
-export function exportAll(ws: Workspace, ledger: LedgerData, config: SpecConfig, formats: ("md" | "csv" | "json")[], outPath?: string): string[] {
-	const sitemap = ws.readJson<Sitemap | undefined>("crawl/sitemap.json", undefined);
-	const sourceMap = ws.readJson<SourceMap | undefined>("source-map.json", undefined);
-	const written: string[] = [];
-	for (const f of formats) {
-		if (f === "md") {
-			const target = outPath && outPath.endsWith(".md") ? resolve(ws.cwd, outPath) : ws.path("REQUIREMENTS.md");
-			const link = (p: string) => relative(dirname(target), join(ws.cwd, p)).split("\\").join("/");
-			const md = renderMarkdown(ledger, { config, sitemap, sourceMap, link });
-			mkdirSync(dirname(target), { recursive: true });
-			writeFileSync(target, md, "utf8");
-			written.push(target);
-		} else if (f === "csv") written.push(ws.writeText("requirements.csv", renderCsv(ledger)));
-		else written.push(ws.writeJson("requirements.json", ledger));
-	}
-	return written;
+export function exportAll(ws: Workspace, state: SpecState, _config?: SpecConfig, formats: ("md" | "csv" | "json")[] = ["md", "csv", "json"], output?: string): string[] {
+  const root = output ? resolve(ws.cwd, output) : ws.path("specification");
+  const rel = relative(ws.root, root);
+  if (root === ws.root || ["auth", "evidence", "crawl", "screens", "tmp"].some(p => rel === p || rel.startsWith(p + sep))) throw new Error("Publication must not overwrite state or capture directories");
+  return publish(root, renderPublication(ws, state, formats));
 }

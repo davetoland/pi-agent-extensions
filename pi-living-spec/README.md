@@ -1,163 +1,126 @@
-# pi-living-spec
+# Pi living spec V2 trial
 
-A [pi](https://pi.dev) package that turns a clickable prototype (a "living spec") into a requirements specification. It was built for Lovable apps, and it works on any web app.
+This alpha keeps one structured specification in `.living-spec/specification.json` and publishes portable Markdown. Prototype evidence, intended requirements, and proposed solutions remain distinct. It does not infer contractual authority from a complete specification.
 
-It looks at the prototype in two ways:
+The original package and V1 `ledger.json` are not modified. This directory is a separate trial, not an installed replacement.
 
-- **The running app.** A headless Chromium crawls every screen and records an outline of what is visible and clickable, plus screenshots and the API calls each screen makes. The agent can then drive the app like a user: open dialogs, submit forms, switch tabs, try the mobile layout.
-- **The source code.** If you have it (Lovable GitHub sync or ZIP export), a static scan pulls out routes, screens, form fields, zod validation rules, Supabase tables, RLS policies, edge functions, auth methods, hard-coded mock data and stubbed handlers. It never runs project code.
+## Run without installing the extension
 
-The agent writes what it finds into a structured ledger with stable IDs, [EARS-style statements](#ears-style-statements), Given/When/Then acceptance criteria, evidence, status and MoSCoW priority. You export that as `REQUIREMENTS.md`, a CSV for Jira or Linear, and JSON.
+Use Node.js 22 or later and a current Pi host. The package needs `playwright` and `typescript`, plus `typebox`, `@types/node`, `@earendil-works/pi-ai` and `@earendil-works/pi-coding-agent` from the Pi host. No package lock, postinstall script or browser download ships with this package.
 
-## Install
+On the machine used for this trial, `node_modules` holds local symlinks with absolute paths to existing installations, not an installed dependency tree. They work only on that machine. Check them before use:
 
-You need Node 20+ and pi 1.x (`@earendil-works/pi-coding-agent`).
-
-```bash
-# 1. Put the package somewhere and install its dependencies (Playwright + TypeScript)
-cd pi-living-spec
-npm install                      # also runs `playwright install chromium`
-#   if the browser download was skipped:  npx playwright install chromium
-
-# 2a. Install it into pi (all projects)
-pi install /absolute/path/to/pi-living-spec
-
-# 2b. …or only for the current project
-pi install -l /absolute/path/to/pi-living-spec
-
-# 2c. …or try it once without installing
-pi -e /absolute/path/to/pi-living-spec
+```sh
+ls -l node_modules node_modules/@earendil-works node_modules/@types
 ```
 
-If you push the folder to a git repo, `pi install git:github.com/you/pi-living-spec` installs the dependencies for you.
+On another machine, prepare dependencies deliberately after reviewing them. One option is to link the host's copies:
 
-## Get hold of the prototype
-
-| What you have | What to do |
-|---|---|
-| Published URL (`https://something.lovable.app`) | Use it directly. |
-| Only an editor or preview link | Ask the client for the published URL, or open it with `/spec-login` (see below). |
-| Access to the Lovable project | Connect GitHub in Lovable (or remix it into your workspace first), then `git clone` it next to your work, e.g. `./prototype`. You can also use Dev Mode → download ZIP. |
-
-The source is optional, but it makes the spec much better. It shows the validation rules, the data model, the permissions and what is faked.
-
-## Use
-
-Start pi in an empty working folder, the folder where you want the spec to live, and run:
-
-```
-/spec https://client-app.lovable.app ./prototype
+```sh
+PI_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent"
+mkdir -p node_modules/@earendil-works node_modules/@types node_modules/.bin
+ln -s "$PI_ROOT" node_modules/@earendil-works/pi-coding-agent
+ln -s "$PI_ROOT/node_modules/@earendil-works/pi-ai" node_modules/@earendil-works/pi-ai
+ln -s "$PI_ROOT/node_modules/typebox" node_modules/typebox
+ln -s "$PI_ROOT/node_modules/@types/node" node_modules/@types/node
 ```
 
-This saves the URL and source path, then starts the `living-spec` skill. The skill works through five phases:
+Then install or link `playwright` and `typescript`, for example with `npm install --no-save playwright@^1.52.0 typescript@^5.6.0`. That command uses the network and changes `node_modules`. Run it only when you intend to. If you link an existing TypeScript instead, also run `ln -s ../typescript/bin/tsc node_modules/.bin/tsc`.
 
-1. **Recon:** source scan and source map
-2. **Inventory:** crawl, screen list, feature areas, project overview
-3. **Deep-dive** each area: drive every flow and record requirements and entities as it goes
-4. **Cross-cutting:** auth and roles, integrations, NFRs, prototype gaps
-5. **Review and export**
+Browser capture needs a Chromium that matches the Playwright version. This package never downloads one. If none is present, install it deliberately with `npx playwright install chromium`, which downloads a browser. Tests and the worked example do not need a browser.
 
-You can interrupt or steer at any time ("focus on billing", "skip the marketing pages"). Everything is saved in `.living-spec/`, so you can stop, `/resume` or start a fresh session later and pick up where you left off.
+From an empty scratch project, launch the local source explicitly:
 
-### Commands
+```sh
+pi --no-extensions --no-skills \
+  -e /absolute/path/pi-living-specV2/src/index.ts \
+  --skill /absolute/path/pi-living-specV2/skills/living-spec/SKILL.md \
+  --skill /absolute/path/pi-living-specV2/skills/spec-clarify/SKILL.md
+```
 
-| Command | What it does |
-|---|---|
-| `/spec <url> [repo]` | Configure and start the guided extraction |
-| `/spec-status` | Screens crawled, requirements, entities, open questions |
-| `/spec-export [md\|csv\|json]` | Write the deliverables |
-| `/spec-login [url]` | Open a **visible** browser so you can log in yourself. The session is saved and reused headlessly. |
-| `/spec-writes fake\|block\|off` | How the browser treats POST/PUT/PATCH/DELETE (see Safety) |
+`--no-extensions` still permits explicit `-e`. `--no-skills` still permits explicit `--skill`. These flags avoid duplicate V1 tools and skills. This command does not install the package or change Pi settings. Do not use `pi install` for this trial.
+
+The model-driven workflows use your configured Pi model. Automated tests and the worked example make no model or prototype calls.
+
+## Try the synthetic invoice example
+
+From this package directory:
+
+```sh
+npm run typecheck
+npm test
+npm run example -- /absolute/path/to/empty-scratch
+```
+
+The example creates an invoice requirement, confirms it without a decision, answers a question, chooses email, freezes an estimating baseline, adds a new fact, and supersedes email with a ticket decision. Read `/absolute/path/to/empty-scratch/.living-spec/specification/README.md`. All data and attribution are explicitly fictional.
+
+## Commands
+
+| Command | Action |
+| --- | --- |
+| `/spec <url> [repo-path]` | Start candidate extraction with the living-spec skill |
+| `/spec-clarify [focus]` | Independently resume the optional persistent interview |
+| `/spec-status` | Show counts, ready questions, reviews, and baselines |
+| `/spec-export [md csv json]` | Publish selected formats |
+| `/spec-writes fake` or `block` | Set the browser write guard |
+| `/spec-login [url]` | Log in using a visible browser and local auth state |
 | `/spec-close` | Close the browser |
 
-### Tools the model uses
+The trial refuses `writeGuard=off`. Existing authentication exceptions remain, so login requests can reach the prototype. Do not exercise payments, logout, or account deletion against a live system. The scanner, crawler, and browser capture implementations are unchanged.
 
-| Tool | Purpose |
-|---|---|
-| `spec_scan_source` | Static analysis → `.living-spec/source-map.md` / `.json` |
-| `spec_crawl` | Visit every reachable screen → `crawl/pages/*.md` outlines, `crawl/screens/*.jpg`, `crawl/sitemap.json`, `crawl/api-inventory.md` |
-| `spec_browse` | open / click / fill / select / check / press / upload / scroll / viewport / screenshot. Returns an outline with `[eN]` refs, a diff after each step, API calls, intercepted writes, toasts, dialogs and console errors. |
-| `spec_requirement` | Requirements ledger: add (batch) / update / list / get / remove / define_area / set_project. Questions get `Q-nnn` IDs. |
-| `spec_entity` | Data-model ledger: entities, fields, relations, rules |
-| `spec_export` | `REQUIREMENTS.md` (with screen inventory, Mermaid ER diagram, gaps, questions, traceability), `requirements.csv`, `requirements.json` |
+## Tools and records
 
-You can also call them yourself in conversation. For example: "crawl just /admin with mobile screenshots", or "list everything marked mocked".
+| Tool | Operations |
+| --- | --- |
+| `spec_scan_source`, `spec_crawl`, `spec_browse` | Source and guarded browser evidence capture |
+| `spec_record` | create, update, confirm, retire, get revision, list, project |
+| `spec_clarify` | frontier, answer with atomic requirement patches, defer, resume |
+| `spec_decision` | create or supersede with a new ID |
+| `spec_review` | list impacts or resolve reviewed/no-change with attribution |
+| `spec_baseline` | create, get, list, diff |
+| `spec_import_v1` | Explicit opt-in import into empty V2 |
+| `spec_export` | Markdown, requirements-only CSV, full-state JSON |
+| `spec_requirement`, `spec_entity` | Compatibility names using V2 create/list/get/update/retire fields |
 
-## What you get
+The compatibility names do not accept the old V1 action and field schema. Use `spec_record` for full capabilities. All schemas expose typed fields through Pi. `src/schema.ts` is the complete field reference.
 
-```
-.living-spec/
-├── REQUIREMENTS.md        ← the deliverable
-├── requirements.csv       ← import into Jira/Linear/Azure DevOps
-├── requirements.json
-├── ledger.json            ← source of truth (requirements, entities, areas)
-├── source-map.md/.json    ← what the code says
-├── crawl/
-│   ├── sitemap.json
-│   ├── api-inventory.md
-│   ├── pages/*.md         ← per-screen outlines
-│   └── screens/*.jpg      ← full-page (and mobile) screenshots
-├── screens/               ← screenshots taken while browsing
-├── auth/                  ← saved login session (git-ignored)
-└── config.json
-```
+Record types are requirement, question, decision, scope, goal, persona, journey, screen, component, interface, entity, work-package, and constraint. Use only those needed. `home` names a scope ID. `contains` links scope nodes. Other links include informed-by, depends-on, appears-in, fulfilled-by, uses, and relates-to. Supersession links are managed by the decision operation.
 
-Every requirement has a status:
+Requirements support EARS statement, acceptance arrays, rationale, notes, evidence, status, priority, and revision-specific confirmation. New intent is candidate and evidence is assumed. Questions carry a working assumption, state, options, append-only answers, and deferral conditions. Entities carry fields, relations by entity ID, and rules. Screens and interfaces label screenshots, wireframes, observed APIs, and proposed contracts explicitly. Work packages optionally carry estimate units, range, basis, assumptions, exclusions, and applicability revisions. No effort is inferred or totalled.
 
-- ✅ **observed**: seen working in the prototype.
-- 🔎 **inferred**: implied by the code, schema or UI.
-- 🧪 **mocked**: the UI exists but the behaviour is faked. These are listed separately as "prototype gaps" so nobody assumes they already work.
-- ❓ **assumed**: needs the client to confirm.
+Confirmation needs an explicit contributor, valid date, and source. Ordinary confirmation creates no decision. Material edits remove current confirmation and require review unless the same operation includes a new explicit confirmation. Creating linked evidence adds review impacts without rewriting linked records.
 
-## Safety
+## Persistence and migration
 
-- **Writes are intercepted by default** (`fake` mode). A prototype is often wired to a live Supabase project. Any POST, PUT, PATCH or DELETE from the page is stopped before it leaves the browser, logged with its payload (which is good evidence for the data model) and answered with a plausible success response, so the UI flow can continue. Auth endpoints (`/auth/v1/`, `/token`, `/login`…) are let through so you can sign in. `block` aborts writes instead. `off` sends real writes and asks for confirmation first.
-- Logout links are never followed during a crawl. Browser `alert` and `confirm` dialogs are accepted automatically, so the writes behind them stay faked.
-- Passwords, tokens, API keys and card fields are masked in every captured request body.
-- The source scan only reads files. It lists env var **names** and never their values.
-- The saved login session in `.living-spec/auth/` is git-ignored automatically. Don't commit or share it.
+V2 validates authoritative state and rejects corrupt or unsupported files. Every record revision is retained. Retirement does not remove records or reuse IDs. Transactions use a local lock, stale-file digest check, and atomic rename. An interrupted process can leave a lock. Verify that no writer is running before manually removing a stale lock. Reload and reconsider a rejected stale write rather than replaying it blindly.
 
-## Tips
+To import, place the original V1 `ledger.json` under the scratch project's `.living-spec`, then call `spec_import_v1` with `optIn: true` and attribution. Import requires an empty V2 history. The tool leaves the V1 bytes unchanged and reports unresolved references. Existing IDs, evidence, notes, and entities are preserved. Legacy observed status never becomes client confirmation. Removed V1 IDs cannot be recovered because V1 did not retain them.
 
-- **Use a vision-capable model.** The agent reads the screenshots for layout-heavy screens.
-- **Large apps:** run the crawl in parts (`spec_crawl` with `include: "^/admin"`), and work through one feature area per session. The ledger persists between sessions.
-- **Logins:** if the client gave you test credentials, tell the agent and it will log in through `spec_browse`. A successful login is saved and reused. For OAuth-only apps (Google, etc.), use `/spec-login`. It needs a desktop session because it opens a real browser window.
-- **Configuration:** settings live in `.living-spec/config.json`. You can edit the viewport, `headless`, extra `writeAllow` URL patterns, and `projectName` for the document title.
-- **Re-runs:** after the client updates the prototype, run `spec_scan_source` and `spec_crawl` again, then ask the agent to "diff against the ledger and update requirements".
+Pi session branching does not branch this workspace specification. It is shared persistent project state.
 
-## Limitations
+## Publication and baselines
 
-- Outlines are heuristic. Canvas-drawn UIs (charts, maps, whiteboards) appear as images, so check the screenshots for those.
-- Routes with parameters (e.g. `/projects/:id`) are only crawled when a link to them exists. The agent can still reach them by clicking through from a list.
-- The source scan recognises React Router (`src/App.tsx`), TanStack Router/Start file routes (newer Lovable projects), Next.js `app/` routes, Supabase types and migrations, zod, react-hook-form and shadcn/ui. Other stacks still get a crawl, plus a lighter scan.
-- `/spec-login` needs a display. On a headless server, log in through `spec_browse` with test credentials instead.
+Default output is `.living-spec/specification/README.md`, with definitive area files and useful linked records, history, reviews, and baselines. Filenames and anchors use stable IDs. Each requirement's full detail appears once, in its current scope home's area file. When a requirement moves to another scope, its former area file keeps an anchor with the same ID that says where it moved and shows no current text. Estimate applicability links lead to the exact revision, using the history page when the revision is no longer current. Repeated exports of unchanged state produce identical bytes. CSV is explicitly requirements-only. JSON retains the complete specification, including questions, answers, links, and history.
 
-## Compatibility
+Generated files have an ownership manifest with SHA-256 digests. Export preflights targets and refuses unknown or human-edited files and symlink paths. It never deletes stale files. The publication report lists owned files from earlier exports that this export did not regenerate. Edit manuscript content through the record tools, then export. Use a new output directory if generated files were edited manually. The `spec_export` path parameter is a directory.
 
-Written against the pi extension API documented for `@earendil-works/pi-coding-agent` 1.5 (`registerTool` with TypeBox schemas, `registerCommand`, `sendUserMessage`, `session_shutdown`). The legacy `@mariozechner/*` import names map to the same modules. Needs Playwright ≥ 1.52.
+Captures can contain personal data, secrets, or source literals. Evidence is not packaged by default. After human review, explicitly list approved evidence citations in a record's `publishEvidence` array. Only those references under the narrow capture allowlist are archived and copied. Auth state, source checkouts, arbitrary files, and traversal paths are excluded. Approved files are frozen by content hash at record creation or update.
 
-## Glossary
+Publication permission is the current approval, not the historical one. Export packages archived bytes only when the latest non-retired revision of the citing record approves those exact bytes. Approval is per record and per content hash. If a capture is retaken and approved again, only the new bytes are approved. Old bytes cited by history or baselines stay withheld until approved again. Removing a reference from `publishEvidence` withholds its bytes from every current, history, and baseline page. The frozen record text, reference, and hash remain visible, marked as withheld. Retiring a record withdraws its permission.
 
-### EARS-style statements
+If an existing output directory still holds evidence bytes that are no longer approved, export fails before writing anything and leaves every file in place. Publish to a fresh output directory and dispose of the old one deliberately. A fresh export omits the withheld bytes. Copies already distributed cannot be recalled.
 
-EARS stands for Easy Approach to Requirements Syntax. Alistair Mavin and colleagues at Rolls-Royce came up with it around 2009 while writing requirements for jet-engine control systems. The idea is to write every requirement in one of a few fixed sentence shapes. That gets rid of most of the vagueness in free-text requirements (“the system should handle errors gracefully”) without needing a formal language.
+External, missing, unapproved, or withheld evidence is reported as not packaged. Review the publication report before sharing. Full JSON can contain sensitive human-entered text even when no assets are bundled.
 
-Every EARS requirement ends in “the system shall [response]”. What changes is the opening clause, which says when the requirement applies:
+Baselines are immutable named snapshots of selected exact revisions plus linked supporting context and project context. Selection distinguishes binding and supporting roles. Draft and estimating baselines allow unresolved assumptions. Approved baselines require supplied approvers and authority. The tool cannot verify that authority. Working changes leave snapshots fixed. Diff reports additions, removals, changed fields, project changes, and estimate applicability. Additions compare the entire working specification, so some may lie outside the baseline's selected scope.
 
-Pattern	Keyword	Template	Example
-Ubiquitous (always true)	none	The system shall…	The system shall store all dates in UTC.
-Event-driven	When	When [trigger], the system shall…	When a user submits the New Project form with valid data, the system shall create the project and open its detail page.
-State-driven	While	While [state], the system shall…	While a project is archived, the system shall prevent edits to its tasks.
-Unwanted behaviour	If … then	If [condition], then the system shall…	If the project name is shorter than 2 characters, then the system shall show “Name must be at least 2 characters” and not submit the form.
-Optional feature	Where	Where [feature/role applies], the system shall…	Where the user is an admin, the system shall show the Delete project action.
+## Trial boundaries
 
-You can also combine them, e.g. “While the user is offline, when they save a task, the system shall queue the change and sync it on reconnect.”
+- This is local-file coordination, not a multi-user server, signed audit log, or commercial approval system.
+- Record updates are atomic. Publication preflight is all-or-nothing before writing, but a process crash during multi-file output may leave a partial publication. Use a new output directory to recover.
+- Impact propagation is conservative across connected records and may over-report. Reviews do not silently update targets.
+- Markdown prose links are reported or resolved for supported inline forms. Arbitrary HTML and complex Markdown reference syntax are not a general document-link resolver.
+- Evidence approval is a human responsibility. The allowlist is not a secret detector.
+- There is no automatic estimate roll-up, diagram editor, provider integration, installation, release, or publishing step.
 
-It’s a good fit for turning a prototype into a spec, which is why I had the extension use it:
-
-It suits what you can observe. Clicking through a prototype mostly shows triggers and responses: “when I click X, Y happens”. That maps straight onto the When pattern. Validation errors map onto If…then, and role-based UI onto Where.
-It makes gaps visible. If you can’t fill in the trigger or the condition, you’ve found an open question for the client rather than a vague requirement.
-It pairs well with acceptance criteria. An EARS statement converts almost mechanically into a Given/When/Then test. “If the name is too short, then show the error” becomes “Given the dialog is open, When I submit an empty name, Then I see ‘Name must be at least 2 characters’”.
-It’s readable by non-engineers. It’s still plain English, so your client can review and sign off on it.
-
-A rule of thumb that goes with it: one “shall” per requirement. If a sentence has “and the system shall also…”, split it into two requirements so each can be tested and traced separately.
+See [trial design](DESIGN.md) for model boundaries.
