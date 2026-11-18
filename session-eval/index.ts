@@ -29,7 +29,7 @@ const CONTEXT_TAG = "session-eval-harness-context";
 const CONTEXT_MARK = `<${CONTEXT_TAG}>`;
 const CONTEXT_CUSTOM_TYPE = "session-eval:harness-context";
 const PEER_TOOL = "tmux_agent_spawn";
-const PEER_WAIT_MS = 30_000;
+const PEER_WAIT_MS = 5 * 60_000;
 const PEER_POLL_MS = 500;
 /** Carries unfinished peer-link polls from the old extension runtime to the new one across /reload. */
 const PEER_HANDOFF_KEY = Symbol.for("session-eval:peer-handoff");
